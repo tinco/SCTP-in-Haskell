@@ -1,0 +1,6 @@
+#!/bin/bash
+
+pdflatex -interaction=batchmode verslag &>/dev/null
+pdflatex -interaction=batchmode verslag &>/dev/null
+
+rm *.aux *.log
