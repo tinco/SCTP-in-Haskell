@@ -1,6 +1,8 @@
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Put
 import Data.Binary.BitPut
+import Data.Binary.Get
+import qualified Data.Binary.Strict.BitGet as BG
 import Data.Word
 
 data Header = Header {
@@ -25,8 +27,28 @@ serializeHeader h = runPut $ do
   putWord16be (streamIdentifier h)
   putWord16be (streamSequenceNumber h)
 
+deSerializeHeader = runGet $ do
+  dataType <- getWord8
+  word <- getByteString 1
+  dataLength <- getWord16be
+  tsn <- getWord32be
+  streamIdentifier <- getWord16be
+  streamSequenceNumber <- getWord16be
+
+  let r = BG.runBitGet word (do
+      reserved <- BG.getAsWord8 5
+      u <- BG.getBit
+      b <- BG.getBit
+      e <- BG.getBit
+      return $ Header dataType reserved u b e dataLength tsn streamIdentifier streamSequenceNumber)
+
+  case r of
+    Left error -> fail error
+    Right x -> return x
+	
+
 main :: IO()
 main = BL.putStr result
  where
   h = Header 255 0 True False True 65535 4294967295 65535 0
-  result = serializeHeader h
+  result = serializeHeader(deSerializeHeader (serializeHeader h))
