@@ -1,3 +1,4 @@
+module Types where
 import Data.ByteString
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Put
@@ -25,7 +26,7 @@ data CommonHeader = CommonHeader {
   destinationPortNumber :: Word16,
   verificationTag :: Word32,
   checksum :: Word32
-}
+} deriving (Show, Eq)
 
 serializeCommonHeader :: CommonHeader -> BL.ByteString
 serializeCommonHeader h = runPut $ do
@@ -60,7 +61,7 @@ data Chunk = Chunk {
   flags :: Word8,
   chunkLength :: Word16,
   value :: BL.ByteString
-}
+} deriving (Show, Eq)
 
 class ChunkType t where
   toChunk :: t -> Chunk
@@ -182,7 +183,7 @@ data Init = Init {
   numberOfInboundStreams :: Word16,
   initialTSN  :: Word32
   -- More optional parameters
-}
+} deriving (Show, Eq)
 
 instance ChunkType Init where
   fromChunk c = Init initLength initiateTag advertisedReceiverWindowCredit
@@ -216,10 +217,8 @@ deSerializeInit = runGet $ do
 
 serializeInit i = (serializeChunk . toChunk) i
 
-{-
 main :: IO()
 main = BL.putStr result
  where
-  h = Payload 255 0 True False True 65535 4294967295 65535 0
-  result = serializePayload(deSerializePayload (serializePayload h))
--}
+  h = Chunk 1 1 3 (BL.pack [1,1,1])
+  result = serializeChunk(deSerializeChunk (serializeChunk h))
