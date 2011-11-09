@@ -4,7 +4,7 @@ Communication with the underlying stack usually is done using the I/O libraries 
 \section{History of I/O in Haskell}
 Haskell has known three approaches to I/O, stream-based, continuation-based and monadic.
 \subsection{Stream-based I/O}
-In stream based I/O an application is modeled as a stream of inputs mapping to a stream of outputs. Examples are taken from "History of Haskell", sometimes slightly altered where deemed necessary. %ref..
+In stream based I/O an application is modeled as a stream of inputs mapping to a stream of outputs. Examples are taken from \cite{hudak_history_2007} and \cite{hudak_conception_1989}, sometimes slightly altered where deemed necessary.
 
 \begin{lstlisting}[caption={Mapping of responses to requests}]
 type Behaviour = [Response] -> [Request]
@@ -87,3 +87,4 @@ main = do
 		appendChan stdout contents)
 		(appendChan stdout "can’t open file")
 \end{lstlisting}
+

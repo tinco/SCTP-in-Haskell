@@ -1,0 +1,5 @@
+#/usr/bin/env sh
+pdflatex verslag &&
+bibtex verslag &&
+pdflatex verslag &&
+pdflatex verslag
