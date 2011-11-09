@@ -1,0 +1,89 @@
+\chapter{I/O}
+Eventually in every network protocol implementation data has to been sent to and received from the underlying stack. The content of the received data is not deterministic and the underlaying stack most certainly has side effects. How the langague deals with these impurities influences its the expressiveness and complexity. It can even influence the architecture of the network protocol implementation.
+Communication with the underlying stack usually is done using the I/O libraries and syntax of the language. This is why we will first explore their basic functionality.
+\section{History of I/O in Haskell}
+Haskell has known three approaches to I/O, stream-based, continuation-based and monadic.
+\subsection{Stream-based I/O}
+In stream based I/O an application is modeled as a stream of inputs mapping to a stream of outputs. Examples are taken from "History of Haskell", sometimes slightly altered where deemed necessary. %ref..
+
+\begin{lstlisting}[caption={Mapping of responses to requests}]
+type Behaviour = [Response] -> [Request]
+\end{lstlisting}
+
+In this style the application generates requests for the operating system, to which the operating system generates appropriate responses. The requests are constructed as a regular Haskell list. An advantage of this approach is that the language does not need any special syntactic addition reading and appending to lists already is a core feature of Haskell.
+
+\begin{lstlisting}[caption={Example of stream-based I/O in Haskell}]
+main :: Behaviour
+main ~(Success : ~((Str userInput) : ~(Success : ~(r4 : _))))
+	= [
+		AppendChan stdout "enter filename\n",
+		ReadChan stdin,
+		AppendChan stdout name,
+		ReadFile name,
+		AppendChan stdout
+			(case r4 of
+				Str contents -> contents
+				Failure err -> "Can't open file")
+		]
+	where (name : _) = lines userInput
+\end{lstlisting}
+\subsection{Continuation-based I/O}
+In Haskell's continuation based style the application is still modeled as a stream of inputs mapping to a stream of outputs, but continuations are passed along which are called with the responses to the requests as parameter. The following source code is an example of a continuation-based readFile method implemented using stream-based I/O.
+
+\begin{lstlisting}[caption={Definition of readFile in continuation-based I/O in Haskell}]
+readFile :: Name-> FailCont -> StrCont -> Behaviour
+readFile name fail succ ~(response:responses)
+	 =
+		ReadFile name : case response of
+			Str val -> succ val responses
+			Failure msg -> fail msg responses
+\end{lstlisting}
+
+This style was preferred over stream-based I/O by many Haskell programmers because the control logic is closer to the inputs.
+
+\begin{lstlisting}[caption={Example of continuation-based I/O in Haskell}]
+main :: Behaviour
+	main =
+ 		appendChan stdout "enter filename\n" abort (
+		readChan stdin abort (\userInput ->
+		letE (lines userInput) (\(name : _) ->
+		appendChan stdout name abort (
+		readFile name fail (\contents ->
+		appendChan stdout contents abort done)))))
+	where
+		fail ioerr =
+			appendChan stdout "can’t open file" abort done
+abort	:: FailCont
+abort err resps = []
+letE	:: a->(a->b)->b
+letE x k = k x
+\end{lstlisting}
+
+\subsection{Monadic I/O}
+Sometime after Haskell's first release the relevance of monads to programming languages was discovered and in particular to functional programming languages. It was discovered that the monad could be used to express sequentially ordered computations. This proved to be ideal for expressing I/O. The I/O monad wraps any side-effect bearing function. This way an application returns an I/O monad which is unrolled by the operating system.
+
+\begin{lstlisting}[caption={Example of monadic I/O in Haskell}]
+main :: IO ()
+main =
+	appendChan stdout "enter filename\n" >>
+	readChan stdin >>= \userInput ->
+	let (name : _) = lines userInput in
+	appendChan stdout name >>
+	catch (readFile name >>= \contents ->
+		appendChan stdout contents)
+		(appendChan stdout "can’t open file")
+\end{lstlisting}
+
+In this example the \lstinline!>>! composes two monads. When the \lstinline!return! method is called on the monad, the left computation is executed, and then the right computation is evaluated and then the right computation is applied to that. Since this approach became very popular in the Haskell community it completely replaced the stream- and continuation-based approaches. A syntactic sugar was also introduced reducing the previous example to:
+
+\begin{lstlisting}[caption={Example of monadic I/O in Haskell}]
+main :: IO ()
+main = do
+	appendChan stdout "enter filename\n"
+	userInput <- readChan stdin
+	let (name : _) = lines userInput
+	appendChan stdout name
+	catch (do contents <- readFile name
+		appendChan stdout contents)
+		(appendChan stdout "can’t open file")
+\end{lstlisting}

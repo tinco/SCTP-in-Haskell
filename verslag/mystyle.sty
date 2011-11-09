@@ -1,5 +1,4 @@
 \usepackage{graphicx,amssymb,amstext,amsmath,listings}
-\usepackage[charter]{mathdesign}
 \usepackage[english]{babel}
 \usepackage{verbatim}
 \usepackage{moreverb}
@@ -8,5 +7,9 @@
 
 \renewcommand{\ttdefault}{fvm}
 \newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
-\newcommand{\briareos}{$\beta$ri\'{a}reos}
-\newcommand{\ror}{\textsc{RoR}}
+\lstset{
+	language=Haskell,
+	tabsize=2,
+	basicstyle=\small,
+	frame=trBL
+}
