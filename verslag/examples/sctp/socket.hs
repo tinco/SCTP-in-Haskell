@@ -19,9 +19,11 @@ data SockAddr = SockAddr {
     scope :: Word32
 }
 
+{- Create a NS.SockAddr from a SockAddr that is ipv4 -}
 sockAddr addr@(SockAddr {addrFamily = NS.AF_INET}) =
     NS.SockAddrInet (NS.PortNum $ portNumber addr) (head $ ipAddress addr)
 
+{- Create a NS.SockAddr from a SockAddr that is ipv6 -}
 sockAddr addr@(SockAddr {addrFamily = NS.AF_INET6}) =
     NS.SockAddrInet6 (NS.PortNum $ portNumber addr) (flow addr) (ip6Addr) (scope addr)
     where
@@ -35,10 +37,12 @@ socket address = do
     return $ MkSocket sock address
 
 {- Attach an SCTP socket to a given address -}
+bindSocket :: Socket -> SockAddr -> IO ()
 bindSocket sock address = do
-    NS.bindSocket sock (sockAddr address)
+    NS.bindSocket (underLyingSocket sock) (sockAddr address)
 
-{- Connect! -}
+{- Connect to a remote socket at address -}
+connect :: Socket -> SockAddr -> IO ()
 connect sock remoteAddress = do
     NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
     where
@@ -47,3 +51,8 @@ connect sock remoteAddress = do
         rawSock = underLyingSocket sock
         init_chunk = undefined
         packed_init_chunk = undefined
+
+{- Accept incoming connections -}
+accept :: Socket -> PacketHandler -> IO ()
+accept sock handler =
+    --
