@@ -44,6 +44,8 @@ deSerializeCommonHeader = runGet $ do
 
   return $ CommonHeader sourcePortNumber destinationPortNumber verificationTag checksum
 
+commonHeaderSize = 12
+
 {-
                                 Chunk Format
         0                   1                   2                   3
