@@ -114,6 +114,8 @@ data Payload = Payload {
   userData :: BL.ByteString
 } deriving (Show, Eq)
 
+payloadChunkType = 0
+
 instance ChunkType Payload where
   fromChunk c = Payload reserved u b e dataLength tsn streamIdentifier
                   streamSequenceNumber payloadProtocolIdentifier userData
@@ -187,6 +189,8 @@ data Init = Init {
   -- More optional parameters
 } deriving (Show, Eq)
 
+initChunkType = 1
+
 instance ChunkType Init where
   fromChunk c = Init initLength initiateTag advertisedReceiverWindowCredit
                   numberOfOutboundStreams numberOfInboundStreams initialTSN
@@ -218,6 +222,57 @@ deSerializeInit = runGet $ do
       numberOfInboundStreams, initialTSN)
 
 serializeInit i = (serializeChunk . toChunk) i
+
+{-			
+				 			Cookie Echo Chunk layout
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |   Type = 10   |Chunk  Flags   |         Length                |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       /                     Cookie                                    /
+       \                                                               \
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-}
+
+data Cookie = Cookie {
+  cookieLength :: Word16,
+  cookie :: BL.ByteString
+} deriving (Show, Eq)
+
+cookieChunkType = 10
+
+instance ChunkType Cookie where
+  fromChunk c = Cookie cookieLength cookie
+    where
+      cookieLength = chunkLength c
+      cookie = value c
+
+  toChunk i =
+    Chunk cookieChunkType 0 (cookieLength i) (cookie i)
+
+serializeCookie i = (serializeChunk . toChunk) i
+
+{-
+							Cookie Ack Layout
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |   Type = 11   |Chunk  Flags   |     Length = 4                |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-}
+
+data CookieAck = CookieAck deriving (Show, Eq)
+
+cookieAckChunkType = 11
+
+instance ChunkType CookieAck where
+  fromChunk c = CookieAck
+
+  toChunk i =
+    Chunk cookieAckChunkType 0 4 BL.empty
+
+serializeCookieAck i = (serializeChunk . toChunk) i
 
 main :: IO()
 main = BL.putStr result

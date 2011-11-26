@@ -15,10 +15,13 @@ protocolNumber = 132 -- at least I think it is..
 
 maxMessageSize = 4096 -- RFC specifies minimum of 1500
 
-data Socket = MkSocket {
+data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
-    sockAddress :: SockAddr,
     thread :: ThreadId
+}
+
+data Socket = MkSocket {
+    sockAddress :: SockAddr
 }
 
 -- TODO I think this is no longer necessary
@@ -79,36 +82,57 @@ listen = listen_on_udp
     -- make the raw socket
 
 {- Listen on Raw Socket -}
-listen_with_socket :: NS.Socket -> IO (ThreadId)
-listen_with_socket socket = do
+listen :: Socket -> IO (ThreadId)
+listen socket = do
     forkIO (listenLoop socket)
 
 testUdpPort = 54312
+testUdpAddress = do
+        localhost <- localServerAddress -- default serveraddress for localhost
+		return (NS.SockAddrInet testUdpPort localhost)
+
 {- Create an udp socket and use that as the raw socket backend -}
-listen_on_udp :: SockAddr -> IO (Socket)
-listen_on_udp address =
+start_on_udp :: NS.SockAddr -> IO (Socket)
+start_on_udp address =
     do
         sock <- NS.socket NS.AF_INET NS.Datagram NS.defaultProtocol
-        localhost <- localServerAddress -- default serveraddress for localhost
-        NS.bindSocket sock (NS.SockAddrInet testUdpPort localhost)
-        thread <- listen_with_socket sock
-        let socket = MkSocket sock address thread
-        return socket
+        NS.bindSocket sock address
+        let stack = MkSCTP sock thread
+        thread <- listen stack
+        return stack
 
+listenLoop :: NS.Socket -> IO ()
+listenLoop socket = do
     -- read data from socket
     -- parse the common header
     -- if it matches an existing stream, pass it to that stream
     -- if it is an init, generate a cookie
     -- it it is a cookie ack, establish a new connection
-listenLoop :: NS.Socket -> IO ()
-listenLoop socket = do
+    -- TODO:
+    -- connections and pending connections should be stored in Sockets
+    -- so per stream configuration and variables can be read
     bytes <- NSB.recv socket maxMessageSize
     let (header_bytes, chunk_bytes) = BS.splitAt (fromIntegral commonHeaderSize) bytes
     let header = deSerializeCommonHeader $ BL.fromChunks [header_bytes]
     let chunk = deSerializeChunk $ BL.fromChunks [chunk_bytes]
     putTraceMsg $ "Header: " ++ (show header)
     putTraceMsg $ "Chunk: " ++ (show chunk)
+	let handler = case (chunkType chunk) of
+			initChunkType -> handleInit
+			payloadChunkType -> handlePayload
+			cookieEchoType -> handleCookieEcho
+	handler stack $ fromChunk chunk
     listenLoop socket
+
+handleInit :: InitChunk -> IO ()
+handleInit init =
+    -- generate cookie
+    -- init ack
+
+handleCookieEcho echo =
+    -- build tcb
+    -- cookie ack
+    -- stream established
 
 sendToSocket :: IO()
 sendToSocket = do
