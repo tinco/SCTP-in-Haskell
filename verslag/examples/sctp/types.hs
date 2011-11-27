@@ -1,6 +1,7 @@
 module Types where
 import Data.ByteString
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as BS
 import Data.Binary.Put
 import qualified Data.Binary.BitPut as BP
 import Data.Binary.Get
@@ -8,11 +9,28 @@ import qualified Data.Binary.Strict.BitGet as BG
 import Data.Word
 import Data.Bits
 
-{-
-					SCTP Common Header Format
+-- Every SCTP message follows the following structure
+data Message = Message {
+    header :: CommonHeader,
+    chunks :: [Chunk]
+}
 
-	0                   1                   2                   3
-	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+deserializeMessage bytes = Message header chunks
+    where
+        (header_bytes, chunk_bytes) = BS.splitAt (fromIntegral commonHeaderSize) bytes
+        header = deSerializeCommonHeader $ BL.fromChunks [header_bytes]
+        chunks = deserializeChunks $ BL.fromChunks [chunk_bytes]
+
+deserializeChunks bytes = chunk : other_chunks
+    where
+        (chunk, rest) = deSerializeChunk bytes
+        other_chunks = if BL.null rest then [] else deserializeChunks rest
+
+{-
+                      SCTP Common Header Format
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |     Source Port Number        |     Destination Port Number   |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -22,9 +40,9 @@ import Data.Bits
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -}
 data CommonHeader = CommonHeader {
-  sourcePortNumber :: Word16,
-  destinationPortNumber :: Word16,
-  verificationTag :: Word32,
+  sourcePortNumber :: PortNum,
+  destinationPortNumber :: PortNum,
+  verificationTag :: VerificationTag,
   checksum :: Word32
 } deriving (Show, Eq)
 
@@ -45,6 +63,8 @@ deSerializeCommonHeader = runGet $ do
   return $ CommonHeader sourcePortNumber destinationPortNumber verificationTag checksum
 
 commonHeaderSize = 12
+type VerificationTag = Word32
+type PortNum = Word16
 
 {-
                                 Chunk Format
@@ -76,13 +96,14 @@ serializeChunk h = runPut $ do
   putWord16be (chunkLength h)
   putLazyByteString (value h)
 
-deSerializeChunk :: BL.ByteString -> Chunk
+deSerializeChunk :: BL.ByteString -> (Chunk, BL.ByteString)
 deSerializeChunk = runGet $ do
   chunkType <- getWord8
   flags <- getWord8
   chunkLength <- getWord16be
   value <- getLazyByteString (fromIntegral chunkLength)
-  return $ Chunk chunkType flags chunkLength value
+  rest <- getRemainingLazyByteString
+  return $ (Chunk chunkType flags chunkLength value, rest)
 
 {-
                         Payload Data Format
@@ -274,8 +295,8 @@ instance ChunkType CookieAck where
 
 serializeCookieAck i = (serializeChunk . toChunk) i
 
-main :: IO()
-main = BL.putStr result
- where
-  h = Chunk 1 1 3 (BL.pack [1,1,1])
-  result = serializeChunk(deSerializeChunk (serializeChunk h))
+-- main :: IO()
+-- main = BL.putStr result
+--  where
+--   h = Chunk 1 1 3 (BL.pack [1,1,1])
+--   result = serializeChunk(deSerializeChunk (serializeChunk h))
