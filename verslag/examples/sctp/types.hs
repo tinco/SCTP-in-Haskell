@@ -249,7 +249,7 @@ instance ChunkType Cookie where
       cookie = value c
 
   toChunk i =
-    Chunk cookieChunkType 0 (cookieLength i) (cookie i)
+    Chunk (fromInteger cookieChunkType) 0 (cookieLength i) (cookie i)
 
 serializeCookie i = (serializeChunk . toChunk) i
 

@@ -8,6 +8,8 @@ import Control.Concurrent
 import Debug.Trace
 import Types
 import Data.Word
+import qualified Data.Map as Map
+import Control.Concurrent.MVar
 
 protocolNumber = 132 -- at least I think it is..
 					 -- change this to non-standard to circumvent
@@ -17,7 +19,7 @@ maxMessageSize = 4096 -- RFC specifies minimum of 1500
 
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
-    thread :: ThreadId
+	sockets :: MVar (Map.Map Word32 Socket)
 }
 
 data Socket = MkSocket {
@@ -66,43 +68,40 @@ sockAddr addr@(SockAddr {addrFamily = NS.AF_INET6}) =
         ip6Addr = (ipAddr !! 0, ipAddr !! 1, ipAddr !! 2, ipAddr !! 3)
 
 {- Connect to a remote socket at address -}
-connect :: Socket -> SockAddr -> IO (Int)
-connect sock remoteAddress = do
-    NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
-    where
-        common_header = CommonHeader (portNumber . sockAddress $ sock)
-            (portNumber remoteAddress) 0 0
-        rawSock = underLyingSocket sock
-        init_chunk = undefined
-        packed_init_chunk = undefined
+-- connect :: SCTP -> SockAddr -> IO (Int)
+-- connect sock remoteAddress = do
+--     NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
+--     where
+--         common_header = CommonHeader (portNumber . sockAddress $ sock)
+--            (portNumber remoteAddress) 0 0
+--        rawSock = underLyingSocket sock
+--        init_chunk = undefined
+--        packed_init_chunk = undefined
 
-{- Listen to incoming connections -}
-listen :: SockAddr -> IO (Socket)
-listen = listen_on_udp
-    -- make the raw socket
-
-{- Listen on Raw Socket -}
-listen :: Socket -> IO (ThreadId)
+{- Listen on Socket -}
+listen :: SCTP -> IO (ThreadId)
 listen socket = do
     forkIO (listenLoop socket)
 
 testUdpPort = 54312
 testUdpAddress = do
-        localhost <- localServerAddress -- default serveraddress for localhost
-		return (NS.SockAddrInet testUdpPort localhost)
+    localhost <- localServerAddress -- default serveraddress for localhost
+    return (NS.SockAddrInet testUdpPort localhost)
 
 {- Create an udp socket and use that as the raw socket backend -}
-start_on_udp :: NS.SockAddr -> IO (Socket)
+start_on_udp :: NS.SockAddr -> IO (SCTP)
 start_on_udp address =
     do
         sock <- NS.socket NS.AF_INET NS.Datagram NS.defaultProtocol
         NS.bindSocket sock address
-        let stack = MkSCTP sock thread
+        connections <- newMVar Map.empty
+        let stack = MkSCTP sock connections
         thread <- listen stack
         return stack
 
-listenLoop :: NS.Socket -> IO ()
-listenLoop socket = do
+
+listenLoop :: SCTP -> IO ()
+listenLoop stack = do
     -- read data from socket
     -- parse the common header
     -- if it matches an existing stream, pass it to that stream
@@ -111,28 +110,35 @@ listenLoop socket = do
     -- TODO:
     -- connections and pending connections should be stored in Sockets
     -- so per stream configuration and variables can be read
-    bytes <- NSB.recv socket maxMessageSize
+    bytes <- NSB.recv (underLyingSocket stack) maxMessageSize
     let (header_bytes, chunk_bytes) = BS.splitAt (fromIntegral commonHeaderSize) bytes
     let header = deSerializeCommonHeader $ BL.fromChunks [header_bytes]
     let chunk = deSerializeChunk $ BL.fromChunks [chunk_bytes]
-    putTraceMsg $ "Header: " ++ (show header)
-    putTraceMsg $ "Chunk: " ++ (show chunk)
-	let handler = case (chunkType chunk) of
-			initChunkType -> handleInit
-			payloadChunkType -> handlePayload
-			cookieEchoType -> handleCookieEcho
-	handler stack $ fromChunk chunk
-    listenLoop socket
+    -- putTraceMsg $ "Header: " ++ (show header)
+    -- putTraceMsg $ "Chunk: " ++ (show chunk)
+    let handler =
+            case () of _
+                        | t == initChunkType -> handleInit
+                        | t == payloadChunkType -> handlePayload
+                        | t == cookieChunkType -> handleCookie
+            where t = toInteger $ chunkType chunk
+    handler stack $ fromChunk chunk
+    listenLoop stack
 
-handleInit :: InitChunk -> IO ()
-handleInit init =
+handleInit :: SCTP -> Init -> IO ()
+handleInit stack init =
+    undefined
     -- generate cookie
     -- init ack
 
-handleCookieEcho echo =
+handleCookie stack cookie =
+    undefined
     -- build tcb
     -- cookie ack
     -- stream established
+
+handlePayload stack payload =
+    undefined
 
 sendToSocket :: IO()
 sendToSocket = do
