@@ -1,15 +1,18 @@
 module Socket where
+import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
-import Network.BSD
+import qualified Network.BSD as NBSD
+import Control.Monad
 import Control.Concurrent
 import Debug.Trace
 import Types
 import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
+import System.Random
 
 protocolNumber = 132 -- at least I think it is..
 					 -- change this to non-standard to circumvent
@@ -25,7 +28,7 @@ data SCTP = MkSCTP {
 
 -- Transmission Control Block
 data Socket = MkSocket {
-    messageChannel :: Chan Message
+    socketChannel :: Chan Message,
     associations :: MVar (Map.Map VerificationTag (Chan Message)),
     secretKey :: BS.ByteString
 }
@@ -34,11 +37,13 @@ data Socket = MkSocket {
 data TCB = TCB {
 }
 
-data IpAddress = NS.HostAddress | NS.HostAddress6
+
+data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32) 
+    deriving (Show, Eq, Ord)
 
 ipAddress :: NS.SockAddr -> IpAddress
-ipAddress (NS.SockAddrInet port host) = host
-ipAddress (NS.SockAddrInet6 port flow host scope) = host
+ipAddress (NS.SockAddrInet port host) = IPv4 host
+ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
 
 -- TODO I think this is no longer necessary
 data SockAddr = SockAddr {
@@ -51,8 +56,8 @@ data SockAddr = SockAddr {
 
 {- Get the default local server address -}
 localServerAddress = do
-    host <- getHostByName "localhost"
-    return $ hostAddress host
+    host <- NBSD.getHostByName "localhost"
+    return $ NBSD.hostAddress host
 
 {- Convert NS.SockAddr to a SockAddr -}
 fromSockAddr :: NS.SockAddr -> SockAddr
@@ -103,21 +108,23 @@ stackLoop :: SCTP -> IO ()
 stackLoop stack = forever $ do
     bytes <- NSB.recv (underLyingSocket stack) maxMessageSize
     let message = deserializeMessage bytes
-    let header = header message
-    let destination = (ipAddress $ address stack, destinationPortNumber header)
-    channels <- readMvar (instances stack)
-    case Map.lookup channels destination of
-        Just c -> writeChan message
+    let h = header message
+    let destination = (address stack, destinationPortNumber h)
+    channels <- readMVar (instances stack)
+    case Map.lookup destination channels of
+        Just channel -> writeChan channel message
         Nothing -> return ()
 
-
 {- Listen on Socket -}
-listen :: SCTP -> IO (Socket)
-listen stack = do
-    -- maak de socket
-    -- registreer de socket op de stack
-    -- fork naar listenSocketLoop
-    -- return socket
+listen :: SCTP -> SockAddr -> IO (Socket)
+listen stack sockaddr = do
+    channel <- newChan
+    associations <- newMVar Map.empty
+    keyValues <- replicateM 4 (randomIO :: IO(Int))
+    let secretKey = BS.pack $ map fromIntegral keyValues
+    let socket = MkSocket channel associations secretKey
+    thread <- forkIO (listenSocketLoop socket)
+    return socket
 
     -- if it matches an existing stream, pass it to that stream
     -- if it is an init, generate a cookie
@@ -129,12 +136,12 @@ listen stack = do
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
 listenSocketLoop socket = forever $ do
-    message <- readChan $ messageChannel socket
+    message <- readChan $ socketChannel socket
     let tag = verificationTag $ header message
-    associations <- readMvar (associations socket)
-    case Map.lookup associations tag of
-        Just c -> writeChan message
-        Nothing -> writeChan message
+    associations <- readMVar (associations socket)
+    case Map.lookup tag associations of
+        Just channel -> writeChan channel message
+        Nothing -> return ()
 
 
 --     let handler =
@@ -149,6 +156,7 @@ listenSocketLoop socket = forever $ do
 {- Connect to a remote socket at address -}
 connect :: SCTP -> SockAddr -> IO (Socket)
 connect stack remoteAddress =
+    undefined
     -- maak een nieuwe socket aan
     -- registreer de nieuwe socket bij stack
     -- initieer de socket in de connect staat
@@ -162,15 +170,16 @@ connect stack remoteAddress =
 --        packed_init_chunk = undefined
 
 connectSocketLoop socket = forever $ do
-    message <- readChan $ messageChannel socket
+    message <- readChan $ socketChannel socket
     let tag = verificationTag $ header message
-    associations <- readMvar (associations socket)
-    case Map.lookup associations tag of
-        Just c -> writeChan message
-        Nothing -> writeChan message
+    associations <- readMVar (associations socket)
+    case Map.lookup tag associations of
+        Just channel -> writeChan channel message
+        Nothing -> return ()
 
 accept :: Socket -> IO({- eehm?-})
 accept socket =
+    undefined
     -- block tot er een ESTABLISHED client is
     -- als er een ESTABLISHED client is, yield dan
     -- met de TCB
