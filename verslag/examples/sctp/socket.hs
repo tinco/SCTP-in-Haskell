@@ -33,8 +33,9 @@ data Socket = MkSocket {
     secretKey :: BS.ByteString
 }
 
--- Transmission Control Block
-data TCB = TCB {
+data Association = MkAssociation {
+    associationChannel :: Chan Message
+    -- Transmission Control Block
 }
 
 
@@ -135,18 +136,28 @@ listen stack sockaddr = do
     -- putTraceMsg $ "Header: " ++ (show header)
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
+
 listenSocketLoop socket = forever $ do
     message <- readChan $ socketChannel socket
-    let tag = verificationTag $ header message
-    associations <- readMVar (associations socket)
-    case Map.lookup tag associations of
-        Just channel -> writeChan channel message
-        Nothing -> return ()
-
+    -- Drop packet if verifyChecksum fails
+    if not $ verifyChecksum message then return()
+    else do
+        let tag = verificationTag $ header message
+        if tag == 0 then
+            undefined
+            -- generate cookie
+            -- reply with cookie
+        else do
+            -- extract chunks
+            -- if first chunk is cookie echo, verify and make new association
+            -- dispatch chunks to association
+            associations <- readMVar (associations socket)
+            case Map.lookup tag associations of
+                Just channel -> writeChan channel message
+                Nothing -> return()
 
 --     let handler =
 --             case () of _
---                         | t == initChunkType -> handleInit
 --                         | t == payloadChunkType -> handlePayload
 --                         | t == cookieChunkType -> handleCookie
 --             where t = toInteger $ chunkType chunk
@@ -199,6 +210,9 @@ handleCookie stack cookie =
 
 handlePayload stack payload =
     undefined
+
+-- TODO implement
+verifyChecksum message = True
 
 sendToSocket :: IO()
 sendToSocket = do
