@@ -1,4 +1,4 @@
-module Socket where
+module SCTP.Socket where
 import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
@@ -8,7 +8,7 @@ import qualified Network.BSD as NBSD
 import Control.Monad
 import Control.Concurrent
 import Debug.Trace
-import Types
+import SCTP.Types
 import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
@@ -141,20 +141,20 @@ listenSocketLoop socket = forever $ do
     message <- readChan $ socketChannel socket
     -- Drop packet if verifyChecksum fails
     if not $ verifyChecksum message then return()
-    else do
+		else do
         let tag = verificationTag $ header message
         if tag == 0 then
-            undefined
-            -- generate cookie
-            -- reply with cookie
-        else do
-            -- extract chunks
-            -- if first chunk is cookie echo, verify and make new association
-            -- dispatch chunks to association
-            associations <- readMVar (associations socket)
-            case Map.lookup tag associations of
-                Just channel -> writeChan channel message
-                Nothing -> return()
+		undefined
+		-- generate cookie
+		-- reply with cookie
+			else do
+			-- extract chunks
+			-- if first chunk is cookie echo, verify and make new association
+			-- dispatch chunks to association
+			associations <- readMVar (associations socket)
+			case Map.lookup tag associations of
+				Just channel -> writeChan channel message
+				Nothing -> return()
 
 --     let handler =
 --             case () of _

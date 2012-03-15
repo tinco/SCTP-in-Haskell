@@ -1,0 +1,9 @@
+Name: SCTP
+Version: 0.0
+License: MIT
+Author: Tinco Andringa
+Synopsis: A haskell implementation of the SCTP protocol
+Build-Type: Simple
+
+Build-Depends: base, binary, binary-strict, bytestring, network, random, containers
+Exposed-Modules: SCTP.Types, SCTP.Socket

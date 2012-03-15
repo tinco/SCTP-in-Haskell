@@ -1,4 +1,4 @@
-module Types where
+module SCTP.Types where
 import Data.ByteString
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
