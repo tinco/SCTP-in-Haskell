@@ -15,15 +15,15 @@ import Control.Concurrent.MVar
 import System.Random
 
 protocolNumber = 132 -- at least I think it is..
-					 -- change this to non-standard to circumvent
-					 -- OS limitations wrt capturing kernel protocols
+                     -- change this to non-standard to circumvent
+                     -- OS limitations wrt capturing kernel protocols
 
 maxMessageSize = 4096 -- RFC specifies minimum of 1500
 
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
     address :: IpAddress,
-	instances :: MVar (Map.Map (IpAddress, PortNum) (Chan Message))
+    instances :: MVar (Map.Map (IpAddress, PortNum) (Chan Message))
 }
 
 -- Transmission Control Block
@@ -142,24 +142,24 @@ listenSocketLoop socket = forever $ do
     message <- readChan $ socketChannel socket
     -- Drop packet if verifyChecksum fails
     if not $ verifyChecksum message then return()
-		else do
+        else do
         let tag = verificationTag $ header message
         if tag == 0 then -- reply with a cookie
             --reply socket message $ generateCookie message
             undefined
-			else do
-			-- extract chunks
+            else do
+            -- extract chunks
             let (firstChunk : otherChunks) = chunks message
             if chunkType firstChunk == cookieChunkType then
-				-- if first chunk is cookie echo, verify and make new association
+                -- if first chunk is cookie echo, verify and make new association
                 -- makeAssociation socket message
                 undefined
-				else do
-				-- dispatch chunks to association
-				associations <- readMVar (associations socket)
-				case Map.lookup tag associations of
-					Just channel -> writeChan channel message
-					Nothing -> return()
+                else do
+                -- dispatch chunks to association
+                associations <- readMVar (associations socket)
+                case Map.lookup tag associations of
+                    Just channel -> writeChan channel message
+                    Nothing -> return()
 
     -- let handler =
     --         case () of _
