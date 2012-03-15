@@ -261,6 +261,7 @@ data Cookie = Cookie {
   cookie :: BL.ByteString
 } deriving (Show, Eq)
 
+cookieChunkType :: Word8
 cookieChunkType = 10
 
 instance ChunkType Cookie where
@@ -270,7 +271,7 @@ instance ChunkType Cookie where
       cookie = value c
 
   toChunk i =
-    Chunk (fromInteger cookieChunkType) 0 (cookieLength i) (cookie i)
+    Chunk (cookieChunkType) 0 (cookieLength i) (cookie i)
 
 serializeCookie i = (serializeChunk . toChunk) i
 

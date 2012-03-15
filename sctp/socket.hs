@@ -104,7 +104,8 @@ start_on_udp address =
         thread <- forkIO (stackLoop stack)
         return stack
 
-
+{- This loops on the underlying socket receiving messages and dispatching them
+ - to registered sockets. -}
 stackLoop :: SCTP -> IO ()
 stackLoop stack = forever $ do
     bytes <- NSB.recv (underLyingSocket stack) maxMessageSize
@@ -125,6 +126,7 @@ listen stack sockaddr = do
     let secretKey = BS.pack $ map fromIntegral keyValues
     let socket = MkSocket channel associations secretKey
     thread <- forkIO (listenSocketLoop socket)
+    -- TODO it should be put in the stack to have messages dispatchd to the socketLoop
     return socket
 
     -- if it matches an existing stream, pass it to that stream
@@ -136,33 +138,36 @@ listen stack sockaddr = do
     -- putTraceMsg $ "Header: " ++ (show header)
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
-
 listenSocketLoop socket = forever $ do
     message <- readChan $ socketChannel socket
     -- Drop packet if verifyChecksum fails
     if not $ verifyChecksum message then return()
 		else do
         let tag = verificationTag $ header message
-        if tag == 0 then
-		undefined
-		-- generate cookie
-		-- reply with cookie
+        if tag == 0 then -- reply with a cookie
+            --reply socket message $ generateCookie message
+            undefined
 			else do
 			-- extract chunks
-			-- if first chunk is cookie echo, verify and make new association
-			-- dispatch chunks to association
-			associations <- readMVar (associations socket)
-			case Map.lookup tag associations of
-				Just channel -> writeChan channel message
-				Nothing -> return()
+            let (firstChunk : otherChunks) = chunks message
+            if chunkType firstChunk == cookieChunkType then
+				-- if first chunk is cookie echo, verify and make new association
+                -- makeAssociation socket message
+                undefined
+				else do
+				-- dispatch chunks to association
+				associations <- readMVar (associations socket)
+				case Map.lookup tag associations of
+					Just channel -> writeChan channel message
+					Nothing -> return()
 
---     let handler =
---             case () of _
---                         | t == payloadChunkType -> handlePayload
---                         | t == cookieChunkType -> handleCookie
---             where t = toInteger $ chunkType chunk
---     handler stack $ fromChunk chunk
---     listenLoop stack
+    -- let handler =
+    --         case () of _
+    --                     | t == payloadChunkType -> handlePayload
+    --                     | t == cookieChunkType -> handleCookie
+    --         where t = toInteger $ chunkType chunk
+    -- handler stack $ fromChunk chunk
+    -- listenLoop stack
 
 {- Connect to a remote socket at address -}
 connect :: SCTP -> SockAddr -> IO (Socket)
@@ -172,13 +177,13 @@ connect stack remoteAddress =
     -- registreer de nieuwe socket bij stack
     -- initieer de socket in de connect staat
 
---     NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
---     where
---         common_header = CommonHeader (portNumber . sockAddress $ sock)
---            (portNumber remoteAddress) 0 0
---        rawSock = underLyingSocket sock
---        init_chunk = undefined
---        packed_init_chunk = undefined
+    -- NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
+    -- where
+    --     common_header = CommonHeader (portNumber . sockAddress $ sock)
+    --        (portNumber remoteAddress) 0 0
+    --    rawSock = underLyingSocket sock
+    --    init_chunk = undefined
+    --    packed_init_chunk = undefined
 
 connectSocketLoop socket = forever $ do
     message <- readChan $ socketChannel socket
