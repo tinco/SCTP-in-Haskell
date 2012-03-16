@@ -28,7 +28,8 @@ data SCTP = MkSCTP {
 
 -- Transmission Control Block
 data Socket = MkSocket {
-    socketChannel :: Chan Message,
+    socketInputChannel :: Chan Message,
+    socketOutputChannel :: Chan Message,
     associations :: MVar (Map.Map VerificationTag (Chan Message)),
     secretKey :: BS.ByteString
 }
@@ -46,47 +47,14 @@ ipAddress :: NS.SockAddr -> IpAddress
 ipAddress (NS.SockAddrInet port host) = IPv4 host
 ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
 
--- TODO I think this is no longer necessary
-data SockAddr = SockAddr {
-    addrFamily :: NS.Family,
-    portNumber :: Word16,
-    hostAddress :: [Word32],
-    flow :: Word32,
-    scope :: Word32
-}
+portNumber :: NS.SockAddr -> NS.PortNumber
+portNumber (NS.SockAddrInet port host) = port
+portNumber (NS.SockAddrInet6 port flow host scope) = port
 
 {- Get the default local server address -}
 localServerAddress = do
     host <- NBSD.getHostByName "localhost"
     return $ NBSD.hostAddress host
-
-{- Convert NS.SockAddr to a SockAddr -}
-fromSockAddr :: NS.SockAddr -> SockAddr
-fromSockAddr (NS.SockAddrInet port host) =
-    SockAddr family (fromIntegral port) hostAddress 0 0 -- no flow or scope
-    where
-        family = NS.AF_INET
-        hostAddress = [host]
-
-fromSockAddr (NS.SockAddrInet6 port flow host scope) =
-    SockAddr family (fromIntegral port) hostAddress flow scope -- no flow or scope
-    where
-        family = NS.AF_INET6
-        (a, b, c, d) = host
-        hostAddress = [a,b,c,d]
-
-
-{- Create a NS.SockAddr from a SockAddr that is ipv4 -}
-sockAddr addr@(SockAddr {addrFamily = NS.AF_INET}) =
-    NS.SockAddrInet (NS.PortNum $ portNumber addr) (head $ hostAddress addr)
-
-{- Create a NS.SockAddr from a SockAddr that is ipv6 -}
-sockAddr addr@(SockAddr {addrFamily = NS.AF_INET6}) =
-    NS.SockAddrInet6 (NS.PortNum $ portNumber addr) (flow addr) (ip6Addr) (scope addr)
-    where
-        ipAddr = hostAddress addr
-        ip6Addr = (ipAddr !! 0, ipAddr !! 1, ipAddr !! 2, ipAddr !! 3)
-
 
 testUdpPort = 54312
 testUdpAddress = do
@@ -118,16 +86,22 @@ stackLoop stack = forever $ do
         Nothing -> return ()
 
 {- Listen on Socket -}
-listen :: SCTP -> SockAddr -> IO (Socket)
+listen :: SCTP -> NS.SockAddr -> IO (Socket)
 listen stack sockaddr = do
-    channel <- newChan
+    inputChannel <- newChan
+    outputChannel <- newChan
     associations <- newMVar Map.empty
     keyValues <- replicateM 4 (randomIO :: IO(Int))
     let secretKey = BS.pack $ map fromIntegral keyValues
-    let socket = MkSocket channel associations secretKey
+    let socket = MkSocket inputChannel outputChannel associations secretKey
     thread <- forkIO (listenSocketLoop socket)
-    -- TODO it should be put in the stack to have messages dispatchd to the socketLoop
+    registerSocket stack sockaddr socket
     return socket
+
+registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
+registerSocket stack addr socket =
+    -- TODO simply overrides existing sockets, is this what we want?
+    modifyMVar_ (instances stack) (return . Map.insert (ipAddress addr, fromIntegral(portNumber addr)) (socketInputChannel socket))
 
     -- if it matches an existing stream, pass it to that stream
     -- if it is an init, generate a cookie
@@ -139,7 +113,7 @@ listen stack sockaddr = do
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
 listenSocketLoop socket = forever $ do
-    message <- readChan $ socketChannel socket
+    message <- readChan $ socketInputChannel socket
     -- Drop packet if verifyChecksum fails
     if not $ verifyChecksum message then return()
         else do
@@ -170,7 +144,7 @@ listenSocketLoop socket = forever $ do
     -- listenLoop stack
 
 {- Connect to a remote socket at address -}
-connect :: SCTP -> SockAddr -> IO (Socket)
+connect :: SCTP -> NS.SockAddr -> IO (Socket)
 connect stack remoteAddress =
     undefined
     -- maak een nieuwe socket aan
@@ -186,7 +160,7 @@ connect stack remoteAddress =
     --    packed_init_chunk = undefined
 
 connectSocketLoop socket = forever $ do
-    message <- readChan $ socketChannel socket
+    message <- readChan $ socketInputChannel socket
     let tag = verificationTag $ header message
     associations <- readMVar (associations socket)
     case Map.lookup tag associations of
