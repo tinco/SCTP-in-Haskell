@@ -23,15 +23,14 @@ maxMessageSize = 4096 -- RFC specifies minimum of 1500
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
     address :: IpAddress,
-    instances :: MVar (Map.Map (IpAddress, PortNum) (Chan Message))
+    instances :: MVar (Map.Map (IpAddress, PortNum) Socket)
 }
 
 -- Transmission Control Block
 data Socket = MkSocket {
-    socketInputChannel :: Chan Message,
-    socketOutputChannel :: Chan Message,
-    associations :: MVar (Map.Map VerificationTag (Chan Message)),
-    secretKey :: BS.ByteString
+    associations :: MVar (Map.Map VerificationTag Association),
+    secretKey :: BS.ByteString,
+    stack :: SCTP
 }
 
 data Association = MkAssociation {
@@ -39,8 +38,7 @@ data Association = MkAssociation {
     -- Transmission Control Block
 }
 
-
-data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32) 
+data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
     deriving (Show, Eq, Ord)
 
 ipAddress :: NS.SockAddr -> IpAddress
@@ -80,28 +78,25 @@ stackLoop stack = forever $ do
     let message = deserializeMessage bytes
     let h = header message
     let destination = (address stack, destinationPortNumber h)
-    channels <- readMVar (instances stack)
-    case Map.lookup destination channels of
-        Just channel -> writeChan channel message
+    sockets <- readMVar (instances stack)
+    case Map.lookup destination sockets of
+        Just socket -> socketAcceptMessage socket message
         Nothing -> return ()
 
 {- Listen on Socket -}
 listen :: SCTP -> NS.SockAddr -> IO (Socket)
 listen stack sockaddr = do
-    inputChannel <- newChan
-    outputChannel <- newChan
     associations <- newMVar Map.empty
     keyValues <- replicateM 4 (randomIO :: IO(Int))
     let secretKey = BS.pack $ map fromIntegral keyValues
-    let socket = MkSocket inputChannel outputChannel associations secretKey
-    thread <- forkIO (listenSocketLoop socket)
+    let socket = MkSocket associations secretKey stack
     registerSocket stack sockaddr socket
     return socket
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
     -- TODO simply overrides existing sockets, is this what we want?
-    modifyMVar_ (instances stack) (return . Map.insert (ipAddress addr, fromIntegral(portNumber addr)) (socketInputChannel socket))
+    modifyMVar_ (instances stack) (return . Map.insert (ipAddress addr, fromIntegral(portNumber addr)) socket)
 
     -- if it matches an existing stream, pass it to that stream
     -- if it is an init, generate a cookie
@@ -112,28 +107,48 @@ registerSocket stack addr socket =
     -- putTraceMsg $ "Header: " ++ (show header)
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
-listenSocketLoop socket = forever $ do
-    message <- readChan $ socketInputChannel socket
+socketAcceptMessage :: Socket -> Message -> IO()
+socketAcceptMessage socket message =
     -- Drop packet if verifyChecksum fails
-    if not $ verifyChecksum message then return()
-        else do
+    if verifyChecksum message then do
         let tag = verificationTag $ header message
-        if tag == 0 then -- reply with a cookie
-            --reply socket message $ generateCookie message
-            undefined
+        if tag == 0 -- verification tag is 0, so message MUST be INIT
+            then do
+                handleInit socket message
             else do
-            -- extract chunks
-            let (firstChunk : otherChunks) = chunks message
-            if chunkType firstChunk == cookieChunkType then
-                -- if first chunk is cookie echo, verify and make new association
-                -- makeAssociation socket message
-                undefined
-                else do
+                let allChunks@(firstChunk : restChunks) = chunks message
+                let toProcess = if chunkType firstChunk == cookieChunkType
+                    then
+                        restChunks
+                    else
+                        allChunks
+
+                if chunkType firstChunk == cookieChunkType then do
+                    handleCookieEcho message
+                    else return()
+
                 -- dispatch chunks to association
                 associations <- readMVar (associations socket)
                 case Map.lookup tag associations of
-                    Just channel -> writeChan channel message
-                    Nothing -> return()
+                    Just association -> handleChunks association chunks
+                    Nothing -> return () -- handle exception cases
+     else return()
+
+handleCookieEcho message =
+    undefined
+
+handleChunks association chunks =
+    undefined
+
+socketSendMessage :: Socket -> Message -> IO()
+socketSendMessage socket message =
+    undefined
+
+handleInit :: Socket -> Message -> IO()
+handleInit socket message =
+    socketSendMessage socket reply
+    where
+        reply = undefined -- generateCookie message
 
     -- let handler =
     --         case () of _
@@ -160,12 +175,13 @@ connect stack remoteAddress =
     --    packed_init_chunk = undefined
 
 connectSocketLoop socket = forever $ do
-    message <- readChan $ socketInputChannel socket
-    let tag = verificationTag $ header message
-    associations <- readMVar (associations socket)
-    case Map.lookup tag associations of
-        Just channel -> writeChan channel message
-        Nothing -> return ()
+    --message <- readChan $ socketInputChannel socket
+    --let tag = verificationTag $ header message
+    --associations <- readMVar (associations socket)
+    --case Map.lookup tag associations of
+    --    Just channel -> writeChan channel message
+    --    Nothing -> return ()
+    undefined
 
 accept :: Socket -> IO({- eehm?-})
 accept socket =
@@ -174,21 +190,6 @@ accept socket =
     -- als er een ESTABLISHED client is, yield dan
     -- met de TCB
 
-
-handleInit :: SCTP -> Init -> IO ()
-handleInit stack init =
-    undefined
-    -- generate cookie
-    -- init ack
-
-handleCookie stack cookie =
-    undefined
-    -- build tcb
-    -- cookie ack
-    -- stream established
-
-handlePayload stack payload =
-    undefined
 
 -- TODO implement
 verifyChecksum message = True
