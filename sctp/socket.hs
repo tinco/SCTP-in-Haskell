@@ -110,38 +110,36 @@ registerSocket stack addr socket =
 socketAcceptMessage :: Socket -> Message -> IO()
 socketAcceptMessage socket message =
     -- Drop packet if verifyChecksum fails
-    if verifyChecksum message then do
+    when (verifyChecksum message) $ do
         let tag = verificationTag $ header message
         if tag == 0 -- verification tag is 0, so message MUST be INIT
-            then do
-                handleInit socket message
+            then handleInit socket message
             else do
                 let allChunks@(firstChunk : restChunks) = chunks message
-                let toProcess = if chunkType firstChunk == cookieChunkType
-                    then
-                        restChunks
-                    else
-                        allChunks
-
-                if chunkType firstChunk == cookieChunkType then do
-                    handleCookieEcho message
-                    else return()
+                let toProcess
+                        | chunkType firstChunk == cookieChunkType = restChunks
+                        | otherwise = allChunks
+                when (chunkType firstChunk == cookieChunkType) $ handleCookieEcho message
 
                 -- dispatch chunks to association
                 associations <- readMVar (associations socket)
                 case Map.lookup tag associations of
-                    Just association -> handleChunks association chunks
-                    Nothing -> return () -- handle exception cases
-     else return()
+                    Just association -> mapM_ (handleChunk association) toProcess
+                    Nothing -> return () -- handle OOTB cases
 
-handleCookieEcho message =
+handleChunk association chunk
+    | t  == payloadChunkType = handlePayload association $ fromChunk chunk
+    | t  == shutdownChunkType = handleShutdown association $ fromChunk chunk
+    | otherwise = return() -- exception?
+  where
+    t = chunkType chunk
+
+handleShutdown :: Association -> Shutdown -> IO()
+handleShutdown association chunk =
     undefined
 
-handleChunks association chunks =
-    undefined
-
-socketSendMessage :: Socket -> Message -> IO()
-socketSendMessage socket message =
+handlePayload :: Association -> Payload -> IO()
+handlePayload association chunk =
     undefined
 
 handleInit :: Socket -> Message -> IO()
@@ -149,6 +147,14 @@ handleInit socket message =
     socketSendMessage socket reply
     where
         reply = undefined -- generateCookie message
+
+socketSendMessage :: Socket -> Message -> IO()
+socketSendMessage socket message =
+    undefined
+
+handleCookieEcho message =
+    undefined
+
 
     -- let handler =
     --         case () of _

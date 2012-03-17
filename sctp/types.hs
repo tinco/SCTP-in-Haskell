@@ -85,6 +85,10 @@ data Chunk = Chunk {
   value :: BL.ByteString
 } deriving (Show, Eq)
 
+instance ChunkType Chunk where
+  toChunk = id
+  fromChunk = id
+
 class ChunkType t where
   toChunk :: t -> Chunk
   fromChunk :: Chunk -> t
@@ -135,7 +139,7 @@ data Payload = Payload {
   userData :: BL.ByteString
 } deriving (Show, Eq)
 
-payloadChunkType = 0
+payloadChunkType = 0 :: Word8
 
 instance ChunkType Payload where
   fromChunk c = Payload reserved u b e dataLength tsn streamIdentifier
@@ -210,7 +214,7 @@ data Init = Init {
   -- More optional parameters
 } deriving (Show, Eq)
 
-initChunkType = 1
+initChunkType = 1 :: Word8
 
 instance ChunkType Init where
   fromChunk c = Init initLength initiateTag advertisedReceiverWindowCredit
@@ -261,8 +265,7 @@ data Cookie = Cookie {
   cookie :: BL.ByteString
 } deriving (Show, Eq)
 
-cookieChunkType :: Word8
-cookieChunkType = 10
+cookieChunkType = 10 :: Word8
 
 instance ChunkType Cookie where
   fromChunk c = Cookie cookieLength cookie
@@ -286,7 +289,7 @@ serializeCookie i = (serializeChunk . toChunk) i
 
 data CookieAck = CookieAck deriving (Show, Eq)
 
-cookieAckChunkType = 11
+cookieAckChunkType = 11 :: Word8
 
 instance ChunkType CookieAck where
   fromChunk c = CookieAck
@@ -295,6 +298,28 @@ instance ChunkType CookieAck where
     Chunk cookieAckChunkType 0 4 BL.empty
 
 serializeCookieAck i = (serializeChunk . toChunk) i
+
+{-
+                           Shutdown Layout
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |   Type = 7    | Chunk  Flags  |      Length = 8               |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |                      Cumulative TSN Ack                       |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-}
+data Shutdown = Shutdown deriving (Show, Eq)
+
+shutdownChunkType = 7 :: Word8
+
+instance ChunkType Shutdown where
+  fromChunk c = Shutdown
+
+  toChunk i =
+    Chunk shutdownChunkType 0 4 BL.empty -- TODO give TSN ack
+
+serializeShutdown i = (serializeChunk . toChunk) i
 
 -- main :: IO()
 -- main = BL.putStr result
