@@ -1,5 +1,5 @@
 module SCTP.Types where
-import Data.ByteString
+import Data.ByteString hiding (map, foldl)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
 import Data.Binary.Put
@@ -14,6 +14,12 @@ data Message = Message {
     header :: CommonHeader,
     chunks :: [Chunk]
 }
+
+serializeMessage message =
+    foldl BL.append headerBytes chunkBytes
+  where
+    headerBytes = serializeCommonHeader $ header message
+    chunkBytes = map serializeChunk $ chunks message
 
 deserializeMessage bytes = Message header chunks
     where
