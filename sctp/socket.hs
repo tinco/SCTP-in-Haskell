@@ -148,9 +148,9 @@ handleInit socket message =
     where
         reply = undefined -- generateCookie message
 
-socketSendMessage :: Socket -> Message -> IO()
+socketSendMessage :: Socket -> Message -> IO(Int)
 socketSendMessage socket message =
-    undefined
+    NSB.send (serializeMessage message) (underlyingSocket $ stack socket)
 
 handleCookieEcho message =
     undefined

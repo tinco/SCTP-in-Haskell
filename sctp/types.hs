@@ -16,20 +16,20 @@ data Message = Message {
 }
 
 serializeMessage message =
-    foldl BL.append headerBytes chunkBytes
+    foldl BL.append headerbytes chunkbytes
   where
-    headerBytes = serializeCommonHeader $ header message
-    chunkBytes = map serializeChunk $ chunks message
+    headerbytes = serializeCommonHeader $ header message
+    chunkbytes = map serializeChunk $ chunks message
 
 deserializeMessage bytes = Message header chunks
     where
         (header_bytes, chunk_bytes) = BS.splitAt (fromIntegral commonHeaderSize) bytes
-        header = deSerializeCommonHeader $ BL.fromChunks [header_bytes]
+        header = deserializeCommonHeader $ BL.fromChunks [header_bytes]
         chunks = deserializeChunks $ BL.fromChunks [chunk_bytes]
 
 deserializeChunks bytes = chunk : other_chunks
     where
-        (chunk, rest) = deSerializeChunk bytes
+        (chunk, rest) = deserializeChunk bytes
         other_chunks = if BL.null rest then [] else deserializeChunks rest
 
 {-
@@ -59,8 +59,8 @@ serializeCommonHeader h = runPut $ do
   putWord32be (verificationTag h)
   putWord32be (checksum h)
 
-deSerializeCommonHeader :: BL.ByteString -> CommonHeader
-deSerializeCommonHeader = runGet $ do
+deserializeCommonHeader :: BL.ByteString -> CommonHeader
+deserializeCommonHeader = runGet $ do
   sourcePortNumber <- getWord16be
   destinationPortNumber <- getWord16be
   verificationTag <- getWord32be
@@ -106,8 +106,8 @@ serializeChunk h = runPut $ do
   putWord16be (chunkLength h)
   putLazyByteString (value h)
 
-deSerializeChunk :: BL.ByteString -> (Chunk, BL.ByteString)
-deSerializeChunk = runGet $ do
+deserializeChunk :: BL.ByteString -> (Chunk, BL.ByteString)
+deserializeChunk = runGet $ do
   chunkType <- getWord8
   flags <- getWord8
   chunkLength <- getWord16be
@@ -153,7 +153,7 @@ instance ChunkType Payload where
                 where
                   (reserved, u, b, e) = parseFlags (flags c)
                   dataLength = chunkLength c - 16 -- userData is length - 16 long
-                  (tsn, streamIdentifier, streamSequenceNumber, payloadProtocolIdentifier, userData) = deSerializePayload (fromIntegral dataLength) (value c)
+                  (tsn, streamIdentifier, streamSequenceNumber, payloadProtocolIdentifier, userData) = deserializePayload (fromIntegral dataLength) (value c)
 
   toChunk h =
       Chunk chunkType flags cLength value
@@ -182,7 +182,7 @@ parseFlags flags = (reserved, u, b, e)
 
 serializePayload h = (serializeChunk . toChunk) h
 
-deSerializePayload length = runGet $ do
+deserializePayload length = runGet $ do
   tsn <- getWord32be
   streamIdentifier <- getWord16be
   streamSequenceNumber <- getWord16be
@@ -216,19 +216,19 @@ data Init = Init {
   advertisedReceiverWindowCredit :: Word32,
   numberOfOutboundStreams :: Word16,
   numberOfInboundStreams :: Word16,
-  initialTSN  :: Word32
-  -- More optional parameters
+  initialTSN  :: Word32,
+  parameters :: [Parameter]
 } deriving (Show, Eq)
 
 initChunkType = 1 :: Word8
 
 instance ChunkType Init where
   fromChunk c = Init initLength initiateTag advertisedReceiverWindowCredit
-                  numberOfOutboundStreams numberOfInboundStreams initialTSN
+                  numberOfOutboundStreams numberOfInboundStreams initialTSN parameters
     where
       initLength = chunkLength c
       (initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
-        numberOfInboundStreams, initialTSN) = deSerializeInit $ value c
+        numberOfInboundStreams, initialTSN, parameters) = deserializeInit $ value c
 
   toChunk i =
     Chunk chunkType flags cLength value
@@ -242,17 +242,57 @@ instance ChunkType Init where
         putWord16be $ numberOfOutboundStreams i
         putWord16be $ numberOfInboundStreams i
         putWord32be $ initialTSN i
+        putLazyByteString $ foldl BL.append BL.empty $ map serializeParameter $ parameters i
 
-deSerializeInit = runGet $ do
+deserializeInit = runGet $ do
   initiateTag <- getWord32be
   advertisedReceiverWindowCredit <- getWord32be
   numberOfOutboundStreams <- getWord16be
   numberOfInboundStreams <- getWord16be
   initialTSN <- getWord32be
+  parameters <- getRemainingLazyByteString
   return (initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
-      numberOfInboundStreams, initialTSN)
+      numberOfInboundStreams, initialTSN, deserializeParameters parameters)
 
 serializeInit i = (serializeChunk . toChunk) i
+
+{-                         Parameter
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |          Parameter Type       |       Parameter Length        |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      \                                                               \
+      /                       Parameter Value                         /
+      \                                                               \
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-}
+
+data Parameter = Parameter {
+  parameterType :: Word16,
+  parameterLength :: Word16,
+  parameterValue :: BL.ByteString
+} deriving (Show, Eq)
+
+serializeParameter :: Parameter -> BL.ByteString
+serializeParameter p = runPut $ do
+    putWord16be (parameterType p)
+    putWord16be (parameterLength p)
+    putLazyByteString (parameterValue p)
+
+deserializeParameter :: BL.ByteString -> (Parameter, BL.ByteString)
+deserializeParameter = runGet $ do
+    pType <- getWord16be
+    pLength <- getWord16be
+    value <- getLazyByteString (fromIntegral pLength)
+    rest <- getRemainingLazyByteString
+    return $ (Parameter pType pLength value, rest)
+
+deserializeParameters :: BL.ByteString -> [Parameter]
+deserializeParameters bytes = parameter : other_parameters
+    where
+        (parameter, rest) = deserializeParameter bytes
+        other_parameters = if BL.null rest then [] else deserializeParameters rest
 
 {-
                             Cookie Echo Chunk layout
@@ -331,4 +371,4 @@ serializeShutdown i = (serializeChunk . toChunk) i
 -- main = BL.putStr result
 --  where
 --   h = Chunk 1 1 3 (BL.pack [1,1,1])
---   result = serializeChunk(deSerializeChunk (serializeChunk h))
+--   result = serializeChunk(deserializeChunk (serializeChunk h))
