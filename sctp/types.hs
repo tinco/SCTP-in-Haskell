@@ -227,6 +227,7 @@ data Init = Init {
 
 initChunkType = 1 :: Word8
 initAckChunkType = 2 :: Word8
+initFixedLength = 5 * 4
 
 instance ChunkType Init where
   fromChunk c = Init initType initLength initiateTag advertisedReceiverWindowCredit
@@ -328,7 +329,8 @@ deserializeParameters bytes = parameter : other_parameters
 	We also don't support fast restarting (with tie-tags)
 -}
 
-cookieLength = 20
+cookieType = 7 :: Word16
+cookieLength = 20 + macLength
 macLength = 20
 
 data Cookie = Cookie {
@@ -357,7 +359,7 @@ makeMac cookie myVerificationTag address portnum secret = mac
         putWord32be myVerificationTag
         mapM_ putWord32be addrBytes
         putWord16be portnum
-    mac = BS.pack $ take macLength $ hmac_sha1 secret $ BL.unpack bytes
+    mac = BS.pack $ take macLength $ hmac_sha1 (BS.unpack secret) $ BL.unpack bytes
 
 serializeCookie c = runPut $ do
     putWord32be $ cookieCreationTime c

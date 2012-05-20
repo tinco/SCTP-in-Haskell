@@ -13,6 +13,7 @@ import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
 import System.Random
+import SCTP.Utils
 
 protocolNumber = 132 -- at least I think it is..
                      -- change this to non-standard to circumvent
@@ -26,20 +27,25 @@ data SCTP = MkSCTP {
     instances :: MVar (Map.Map (IpAddress, PortNum) Socket)
 }
 
--- Transmission Control Block
+-- Socket is an instance of SCTP
 data Socket = MkSocket {
     associations :: MVar (Map.Map VerificationTag Association),
     secretKey :: BS.ByteString,
     stack :: SCTP
 }
 
+-- Transmission Control Block
 data Association = MkAssociation {
-    associationChannel :: Chan Message
-    -- Transmission Control Block
+    associationChannel :: Chan Message,
+    peerVerificationTag :: VerificationTag,
+    myVerificationTag :: VerificationTag,
+    associationState :: MVar AssociationState
 }
 
-data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
-    deriving (Show, Eq, Ord)
+data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
+                        SHUTDOWNPENDING | SHUTDOWNSENT | SHUTDOWNRECEIVED |
+                        SHUTDOWNACKSENT
+
 
 ipAddress :: NS.SockAddr -> IpAddress
 ipAddress (NS.SockAddrInet port host) = IPv4 host
@@ -48,6 +54,10 @@ ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
 portNumber :: NS.SockAddr -> NS.PortNumber
 portNumber (NS.SockAddrInet port host) = port
 portNumber (NS.SockAddrInet6 port flow host scope) = port
+
+sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
+sockAddr (IPv4 host, port) = NS.SockAddrInet port host
+sockAddr (IPv6 host, port) = NS.SockAddrInet6 port undefined host undefined
 
 {- Get the default local server address -}
 localServerAddress = do
@@ -74,13 +84,13 @@ start_on_udp address =
  - to registered sockets. -}
 stackLoop :: SCTP -> IO ()
 stackLoop stack = forever $ do
-    bytes <- NSB.recv (underLyingSocket stack) maxMessageSize
+    (bytes, address) <- NSB.recvFrom (underLyingSocket stack) maxMessageSize
     let message = deserializeMessage bytes
     let h = header message
     let destination = (address stack, destinationPortNumber h)
     sockets <- readMVar (instances stack)
     case Map.lookup destination sockets of
-        Just socket -> socketAcceptMessage socket message
+        Just socket -> socketAcceptMessage socket (ipAddress address) message
         Nothing -> return ()
 
 {- Listen on Socket -}
@@ -108,12 +118,12 @@ registerSocket stack addr socket =
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
 socketAcceptMessage :: Socket -> Message -> IO()
-socketAcceptMessage socket message =
+socketAcceptMessage socket address message =
     -- Drop packet if verifyChecksum fails
     when (verifyChecksum message) $ do
         let tag = verificationTag $ header message
         if tag == 0 -- verification tag is 0, so message MUST be INIT
-            then handleInit socket message
+            then handleInit socket address message
             else do
                 let allChunks@(firstChunk : restChunks) = chunks message
                 let toProcess
@@ -143,14 +153,49 @@ handlePayload association chunk =
     undefined
 
 handleInit :: Socket -> Message -> IO()
-handleInit socket message =
-    socketSendMessage socket reply
-    where
-        reply = undefined -- generateCookie message
+handleInit socket address message = do
+    now <- timestamp getCurrentTime
+    myVT <- fromIntegral (randomIO :: IO(Int))
+    myTSN <- fromIntegral (randomIO :: IO(Int))
+    let peerVT = verificationTag message
+    let cookie = Cookie now peerVT
+         (advertisedWindowCredit initChunk)
+         (numberOfOutboundStreams initChunk)
+         (numberOfInboundStreams initChunk)
+         myTSN
+         BS.empty
 
-socketSendMessage :: Socket -> Message -> IO(Int)
-socketSendMessage socket message =
-    NSB.send (serializeMessage message) (underlyingSocket $ stack socket)
+    let signedCookie = cookie { mac = makeMac cookie myVT address portnum secret }
+
+    let newHeader = CommonHeader {
+        sourcePortNumber = destinationPortNumber mHeader,
+        destinationPortNumber = sourcePortNumber mHeader,
+        verificationTag = peerVT,
+        checksum = 0
+    }
+
+    let initAck = Init {
+        initType = initAckChunkType,
+        initLength = initFixedLength + cookieLength,
+        initiateTag = myVT,
+        adertisedReceiverWindowCredit = advertisedWindowCredit initChunk -- TODO be smart
+        numberOfOutboundStreams = 1,
+        numberOfInboundStreams = 1,
+        initialTSN  = myTSN,
+        parameters = [Parameter cookieType cookieLength (serializeCookie signedCookie)]
+    }
+
+    socketSendMessage socket (address, portnum) (Message newHeader [toChunk initAck])
+  where
+    mHeader = header message
+    initChunk = (fromChunk $ head $ chunks message) :: Init
+    secret = secretKey socket
+    portnum = destinationPortNumber mHeader
+
+
+socketSendMessage :: Socket -> IpAddress -> Message -> IO(Int)
+socketSendMessage socket address message =
+    NSB.sendTo (serializeMessage message) (sockAddr address) (underlyingSocket $ stack socket)
 
 handleCookieEcho message =
     undefined
