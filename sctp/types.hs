@@ -1,5 +1,5 @@
 module SCTP.Types where
-import Data.ByteString hiding (map, foldl)
+import Data.ByteString hiding (map, foldl, take)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
 import Data.Binary.Put
@@ -8,6 +8,10 @@ import Data.Binary.Get
 import qualified Data.Binary.Strict.BitGet as BG
 import Data.Word
 import Data.Bits
+import Data.HMAC
+
+data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
+    deriving (Show, Eq, Ord)
 
 -- Every SCTP message follows the following structure
 data Message = Message {
@@ -211,6 +215,7 @@ deserializePayload length = runGet $ do
        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -}
 data Init = Init {
+  initType :: Word8,
   initLength :: Word16,
   initiateTag :: Word32,
   advertisedReceiverWindowCredit :: Word32,
@@ -221,13 +226,13 @@ data Init = Init {
 } deriving (Show, Eq)
 
 initChunkType = 1 :: Word8
+initAckChunkType = 2 :: Word8
 
 instance ChunkType Init where
-  fromChunk c = Init initLength initiateTag advertisedReceiverWindowCredit
+  fromChunk c = Init initType initLength initiateTag advertisedReceiverWindowCredit
                   numberOfOutboundStreams numberOfInboundStreams initialTSN parameters
     where
-      initLength = chunkLength c
-      (initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
+      (initType, initLength, initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
         numberOfInboundStreams, initialTSN, parameters) = deserializeInit $ value c
 
   toChunk i =
@@ -237,6 +242,9 @@ instance ChunkType Init where
       flags = 0
       cLength = initLength i
       value = runPut $ do
+        putWord8 $ initType i
+        putWord8 $ 0
+        putWord16be $ initLength i
         putWord32be $ initiateTag i
         putWord32be $ advertisedReceiverWindowCredit i
         putWord16be $ numberOfOutboundStreams i
@@ -245,13 +253,16 @@ instance ChunkType Init where
         putLazyByteString $ foldl BL.append BL.empty $ map serializeParameter $ parameters i
 
 deserializeInit = runGet $ do
+  initType <- getWord8
+  flags <- getWord8
+  initLength <- getWord16be
   initiateTag <- getWord32be
   advertisedReceiverWindowCredit <- getWord32be
   numberOfOutboundStreams <- getWord16be
   numberOfInboundStreams <- getWord16be
   initialTSN <- getWord32be
   parameters <- getRemainingLazyByteString
-  return (initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
+  return (initType, initLength, initiateTag, advertisedReceiverWindowCredit, numberOfOutboundStreams,
       numberOfInboundStreams, initialTSN, deserializeParameters parameters)
 
 serializeInit i = (serializeChunk . toChunk) i
@@ -295,6 +306,81 @@ deserializeParameters bytes = parameter : other_parameters
         other_parameters = if BL.null rest then [] else deserializeParameters rest
 
 {-
+	State Cookie
+      Parameter Type Value: 7
+      Parameter Length:  variable size, depending on Size of Cookie
+      Parameter Value:
+
+	I'm not sure what all belongs in the state cookie
+    I'm guessing:
+      - Cookie Creation Time (for stale checking)
+      - Peer verification tag
+      - Advertised window credit
+      - Number of outbound streams	
+      - Maximum inbound streams
+      - Initial TSN
+      - MAC (HMAC) over:
+        - My verification tag
+        - Address of peer
+    If we were to support multihoming the cookie would have to include every
+    address supplied with the Init chunk. All these addresses would
+    also need to be MAC'ed. This design makes no sense.
+	We also don't support fast restarting (with tie-tags)
+-}
+
+cookieLength = 20
+macLength = 20
+
+data Cookie = Cookie {
+  cookieCreationTime :: Word32,
+  peerVerificationTag :: VerificationTag,
+  windowCredit :: Word32,
+  outboundStreams :: Word16,
+  maxInboundStreams :: Word16,
+  myTSN :: Word32,
+  mac :: BS.ByteString
+} deriving (Show, Eq)
+
+makeMac cookie myVerificationTag address portnum secret = mac
+  where
+    addrBytes = case address of
+        IPv4 b -> [b]
+        IPv6 (a,b,c,d) -> [a,b,c,d]
+
+    bytes = runPut $ do
+        putWord32be $ cookieCreationTime cookie
+        putWord32be $ peerVerificationTag cookie
+        putWord32be $ windowCredit cookie
+        putWord16be $ outboundStreams cookie
+        putWord16be $ maxInboundStreams cookie
+        putWord32be $ myTSN cookie
+        putWord32be myVerificationTag
+        mapM_ putWord32be addrBytes
+        putWord16be portnum
+    mac = BS.pack $ take macLength $ hmac_sha1 secret $ BL.unpack bytes
+
+serializeCookie c = runPut $ do
+    putWord32be $ cookieCreationTime c
+    putWord32be $ peerVerificationTag c
+    putWord32be $ windowCredit c
+    putWord16be $ outboundStreams c
+    putWord16be $ maxInboundStreams c
+    putWord32be $ myTSN c
+    putByteString $ mac c
+
+deserializeCookie = runGet $ do
+    cookieCreationTime <- getWord32be
+    peerVerificationTag <- getWord32be
+    windowCredit <- getWord32be
+    outboundStreams <- getWord16be
+    maxInboundStreams <- getWord16be
+    myTSN <- getWord32be
+    mac <- getByteString macLength
+    rest <- getRemainingLazyByteString
+    return (Cookie cookieCreationTime peerVerificationTag
+             windowCredit outboundStreams maxInboundStreams myTSN mac, rest)
+
+{-
                             Cookie Echo Chunk layout
         0                   1                   2                   3
         0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -306,23 +392,23 @@ deserializeParameters bytes = parameter : other_parameters
        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -}
 
-data Cookie = Cookie {
-  cookieLength :: Word16,
-  cookie :: BL.ByteString
+data CookieEcho = CookieEcho {
+  cookieEchoLength :: Word16,
+  cookieEcho :: BL.ByteString
 } deriving (Show, Eq)
 
-cookieChunkType = 10 :: Word8
+cookieEchoChunkType = 10 :: Word8
 
-instance ChunkType Cookie where
-  fromChunk c = Cookie cookieLength cookie
+instance ChunkType CookieEcho where
+  fromChunk c = CookieEcho cookieEchoLength cookieEcho
     where
-      cookieLength = chunkLength c
-      cookie = value c
+      cookieEchoLength = chunkLength c
+      cookieEcho = value c
 
   toChunk i =
-    Chunk (cookieChunkType) 0 (cookieLength i) (cookie i)
+    Chunk (cookieEchoChunkType) 0 (cookieEchoLength i) (cookieEcho i)
 
-serializeCookie i = (serializeChunk . toChunk) i
+serializeCookieEcho i = (serializeChunk . toChunk) i
 
 {-
                             Cookie Ack Layout
