@@ -2,6 +2,7 @@ module SCTP.Socket where
 import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
+import qualified Network.Socket.ByteString.Lazy as NSBL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Network.BSD as NBSD
@@ -155,18 +156,19 @@ handlePayload association chunk =
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket address message = do
-    now <- timestamp getCurrentTime
-    myVT <- fromIntegral (randomIO :: IO(Int))
-    myTSN <- fromIntegral (randomIO :: IO(Int))
-    let peerVT = verificationTag message
+    time <- getCurrentTime
+    let now = timestamp time
+    myVT <- randomIO :: IO(Int)
+    myTSN <- randomIO :: IO(Int)
+    let peerVT = verificationTag mHeader
     let cookie = Cookie now peerVT
          (advertisedReceiverWindowCredit initChunk)
          (numberOfOutboundStreams initChunk)
          (numberOfInboundStreams initChunk)
-         myTSN
+         (fromIntegral myTSN)
          BS.empty
 
-    let signedCookie = cookie { mac = makeMac cookie myVT address portnum secret }
+    let signedCookie = cookie { mac = makeMac cookie (fromIntegral myVT) address portnum secret }
 
     let newHeader = CommonHeader {
         sourcePortNumber = destinationPortNumber mHeader,
@@ -177,16 +179,16 @@ handleInit socket address message = do
 
     let initAck = Init {
         initType = initAckChunkType,
-        initLength = initFixedLength + cookieLength,
-        initiateTag = myVT,
+        initLength = (fromIntegral initFixedLength) + (fromIntegral cookieLength),
+        initiateTag = fromIntegral myVT,
         advertisedReceiverWindowCredit = advertisedReceiverWindowCredit initChunk, -- TODO be smart
         numberOfOutboundStreams = 1,
         numberOfInboundStreams = 1,
-        initialTSN  = myTSN,
-        parameters = [Parameter cookieType cookieLength (serializeCookie signedCookie)]
+        initialTSN  = fromIntegral myTSN,
+        parameters = [Parameter cookieType (fromIntegral cookieLength) (serializeCookie signedCookie)]
     }
 
-    socketSendMessage socket (address, portnum) (Message newHeader [toChunk initAck])
+    socketSendMessage socket (address, fromIntegral portnum) (Message newHeader [toChunk initAck])
   where
     mHeader = header message
     initChunk = (fromChunk $ head $ chunks message) :: Init
@@ -194,9 +196,11 @@ handleInit socket address message = do
     portnum = destinationPortNumber mHeader
 
 
-socketSendMessage :: Socket -> IpAddress -> Message -> IO(Int)
+socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO()
 socketSendMessage socket address message =
-    NSB.sendTo (serializeMessage message) (sockAddr address) (underLyingSocket $ stack socket)
+    NSB.sendManyTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
+  where
+    messageBytes = BL.toChunks $ serializeMessage message
 
 handleCookieEcho message =
     undefined
