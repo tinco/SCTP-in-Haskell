@@ -9,11 +9,12 @@ import Control.Monad
 import Control.Concurrent
 import Debug.Trace
 import SCTP.Types
+import SCTP.Utils
 import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
 import System.Random
-import SCTP.Utils
+import Data.Time.Clock
 
 protocolNumber = 132 -- at least I think it is..
                      -- change this to non-standard to circumvent
@@ -84,13 +85,13 @@ start_on_udp address =
  - to registered sockets. -}
 stackLoop :: SCTP -> IO ()
 stackLoop stack = forever $ do
-    (bytes, address) <- NSB.recvFrom (underLyingSocket stack) maxMessageSize
+    (bytes, peerAddress) <- NSB.recvFrom (underLyingSocket stack) maxMessageSize
     let message = deserializeMessage bytes
     let h = header message
     let destination = (address stack, destinationPortNumber h)
     sockets <- readMVar (instances stack)
     case Map.lookup destination sockets of
-        Just socket -> socketAcceptMessage socket (ipAddress address) message
+        Just socket -> socketAcceptMessage socket (ipAddress peerAddress) message
         Nothing -> return ()
 
 {- Listen on Socket -}
@@ -117,7 +118,7 @@ registerSocket stack addr socket =
     -- putTraceMsg $ "Header: " ++ (show header)
     -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
-socketAcceptMessage :: Socket -> Message -> IO()
+socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
 socketAcceptMessage socket address message =
     -- Drop packet if verifyChecksum fails
     when (verifyChecksum message) $ do
@@ -127,9 +128,9 @@ socketAcceptMessage socket address message =
             else do
                 let allChunks@(firstChunk : restChunks) = chunks message
                 let toProcess
-                        | chunkType firstChunk == cookieChunkType = restChunks
+                        | chunkType firstChunk == cookieEchoChunkType = restChunks
                         | otherwise = allChunks
-                when (chunkType firstChunk == cookieChunkType) $ handleCookieEcho message
+                when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho message
 
                 -- dispatch chunks to association
                 associations <- readMVar (associations socket)
@@ -152,14 +153,14 @@ handlePayload :: Association -> Payload -> IO()
 handlePayload association chunk =
     undefined
 
-handleInit :: Socket -> Message -> IO()
+handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket address message = do
     now <- timestamp getCurrentTime
     myVT <- fromIntegral (randomIO :: IO(Int))
     myTSN <- fromIntegral (randomIO :: IO(Int))
     let peerVT = verificationTag message
     let cookie = Cookie now peerVT
-         (advertisedWindowCredit initChunk)
+         (advertisedReceiverWindowCredit initChunk)
          (numberOfOutboundStreams initChunk)
          (numberOfInboundStreams initChunk)
          myTSN
@@ -178,7 +179,7 @@ handleInit socket address message = do
         initType = initAckChunkType,
         initLength = initFixedLength + cookieLength,
         initiateTag = myVT,
-        adertisedReceiverWindowCredit = advertisedWindowCredit initChunk -- TODO be smart
+        advertisedReceiverWindowCredit = advertisedReceiverWindowCredit initChunk, -- TODO be smart
         numberOfOutboundStreams = 1,
         numberOfInboundStreams = 1,
         initialTSN  = myTSN,
@@ -195,7 +196,7 @@ handleInit socket address message = do
 
 socketSendMessage :: Socket -> IpAddress -> Message -> IO(Int)
 socketSendMessage socket address message =
-    NSB.sendTo (serializeMessage message) (sockAddr address) (underlyingSocket $ stack socket)
+    NSB.sendTo (serializeMessage message) (sockAddr address) (underLyingSocket $ stack socket)
 
 handleCookieEcho message =
     undefined
