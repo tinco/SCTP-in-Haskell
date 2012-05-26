@@ -29,12 +29,28 @@ data SCTP = MkSCTP {
     instances :: MVar (Map.Map (IpAddress, PortNum) Socket)
 }
 
--- Socket is an instance of SCTP
-data Socket = MkSocket {
-    associations :: MVar (Map.Map VerificationTag Association),
-    secretKey :: BS.ByteString,
-    stack :: SCTP
+data Socket =  
+  -- Socket is an instance of SCTP
+  ListenSocket {
+      associations :: MVar (Map.Map VerificationTag Association),
+      secretKey :: BS.ByteString,
+      stack :: SCTP,
+      eventhandler :: (Event -> IO())
+  } |
+  ConnectSocket {
+      association :: Association,
+      socketVerificationTag :: VerificationTag,
+      socketState :: SocketState,
+      eventhandler :: (Event -> IO()),
+      stack :: SCTP,
+      peerAddress :: NS.SockAddr
+  }
+
+data Event = Event {
+    eventMessage :: Message
 }
+
+data SocketState = CONNECTING | CONNECTED | CLOSED
 
 -- Transmission Control Block
 data Association = MkAssociation {
@@ -96,28 +112,39 @@ stackLoop stack = forever $ do
         Nothing -> return ()
 
 {- Listen on Socket -}
-listen :: SCTP -> NS.SockAddr -> IO (Socket)
-listen stack sockaddr = do
+listen :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
+listen stack sockaddr eventhandler = do
     associations <- newMVar Map.empty
     keyValues <- replicateM 4 (randomIO :: IO(Int))
     let secretKey = BS.pack $ map fromIntegral keyValues
-    let socket = MkSocket associations secretKey stack
+    let socket = ListenSocket associations secretKey stack eventhandler
     registerSocket stack sockaddr socket
     return socket
+
+{- Connect -}
+connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
+connect stack sockaddr eventhandler = do
+    associations <- newMVar Map.empty
+    keyValues <- replicateM 4 (randomIO :: IO(Int))
+    let socket = ConnectSocket association verificationTag 
+                 CONNECTING eventhandler stack sockaddr
+    registerSocket stack sockaddr socket
+    initializeConnection socket
+    return socket
+  where
+    association = undefined
+    verificationTag = undefined
+
+initializeConnection socket =
+    socketSendMessage socket address init
+  where
+    init = undefined
+    address = undefined
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
     -- TODO simply overrides existing sockets, is this what we want?
     modifyMVar_ (instances stack) (return . Map.insert (ipAddress addr, fromIntegral(portNumber addr)) socket)
-
-    -- if it matches an existing stream, pass it to that stream
-    -- if it is an init, generate a cookie
-    -- it it is a cookie ack, establish a new connection
-    -- TODO:
-    -- connections and pending connections should be stored in Sockets
-    -- so per stream configuration and variables can be read
-    -- putTraceMsg $ "Header: " ++ (show header)
-    -- putTraceMsg $ "Chunk: " ++ (show chunk)
 
 socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
 socketAcceptMessage socket address message =
@@ -155,7 +182,8 @@ handlePayload association chunk =
     undefined
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
-handleInit socket address message = do
+handleInit socket@ConnectSocket{} _ _ = return () -- throw away init's when we're not listening
+handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     let now = timestamp time
     myVT <- randomIO :: IO(Int)
@@ -215,9 +243,9 @@ handleCookieEcho message =
     -- listenLoop stack
 
 {- Connect to a remote socket at address -}
-connect :: SCTP -> NS.SockAddr -> IO (Socket)
-connect stack remoteAddress =
-    undefined
+--connect :: SCTP -> NS.SockAddr -> IO (Socket)
+--connect stack remoteAddress =
+--    undefined
     -- maak een nieuwe socket aan
     -- registreer de nieuwe socket bij stack
     -- initieer de socket in de connect staat
@@ -238,17 +266,6 @@ connectSocketLoop socket = forever $ do
     --    Just channel -> writeChan channel message
     --    Nothing -> return ()
     undefined
-
-accept :: Socket -> IO({- eehm?-})
-accept socket =
-    undefined
-    -- block tot er een ESTABLISHED client is
-    -- als er een ESTABLISHED client is, yield dan
-    -- met de TCB
-
-
--- TODO implement
-verifyChecksum message = True
 
 sendToSocket :: IO()
 sendToSocket = do

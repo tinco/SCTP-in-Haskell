@@ -9,3 +9,6 @@ epoch = UTCTime (ModifiedJulianDay 56066) (secondsToDiffTime 59481)
 timestamp at =  format $ diffUTCTime at epoch
   where
     format t = fromIntegral $ round t
+
+-- TODO implement
+verifyChecksum message = True
