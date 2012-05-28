@@ -136,10 +136,24 @@ connect stack sockaddr eventhandler = do
     verificationTag = undefined
 
 initializeConnection socket =
-    socketSendMessage socket address init
+    socketSendMessage socket address message
   where
-    init = undefined
-    address = undefined
+    init = Init {
+        initType = initChunkType,
+        initLength = fromIntegral initFixedLength,
+        initiateTag = socketVerificationTag socket,
+        advertisedReceiverWindowCredit = 0,
+        numberOfOutboundStreams = 1,
+        numberOfInboundStreams = 0,
+        initialTSN  = socketVerificationTag socket,
+        parameters = []
+    }
+
+    peerAddress' = peerAddress socket
+    portNumber' = portNumber peerAddress'
+    address = (ipAddress peerAddress', portNumber') -- TODO pick a good portnumber
+    header = CommonHeader (fromIntegral portNumber') (fromIntegral portNumber') 0 0
+    message = Message header [toChunk init]
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
@@ -185,29 +199,41 @@ handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ _ = return () -- throw away init's when we're not listening
 handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
-    let now = timestamp time
-    myVT <- randomIO :: IO(Int)
-    myTSN <- randomIO :: IO(Int)
-    let peerVT = verificationTag mHeader
-    let cookie = Cookie now peerVT
-         (advertisedReceiverWindowCredit initChunk)
-         (numberOfOutboundStreams initChunk)
-         (numberOfInboundStreams initChunk)
-         (fromIntegral myTSN)
-         BS.empty
+    myVT <- randomIO :: IO Int
+    myTSN <- randomIO :: IO Int
+    let responseMessage = makeInitResponse address message secret time myVT myTSN
+    socketSendMessage socket (address, portnum) responseMessage
+  where
+    secret = secretKey socket
+    portnum = fromIntegral $ (destinationPortNumber.header) message
 
-    let signedCookie = cookie { mac = makeMac cookie (fromIntegral myVT) address portnum secret }
+makeInitResponse address message secret time myVT myTSN =
+    Message newHeader [toChunk initAck]
+  where
+    portnum = destinationPortNumber mHeader
+    initChunk = (fromChunk $ head $ chunks message) :: Init
+    mHeader = header message
+    now = timestamp time
+    peerVT = verificationTag mHeader
+    cookie = Cookie now peerVT
+     (advertisedReceiverWindowCredit initChunk)
+     (numberOfOutboundStreams initChunk)
+     (numberOfInboundStreams initChunk)
+     (fromIntegral myTSN)
+     BS.empty
 
-    let newHeader = CommonHeader {
+    signedCookie = cookie { mac = makeMac cookie (fromIntegral myVT) address portnum secret }
+
+    newHeader = CommonHeader {
         sourcePortNumber = destinationPortNumber mHeader,
         destinationPortNumber = sourcePortNumber mHeader,
         verificationTag = peerVT,
         checksum = 0
     }
 
-    let initAck = Init {
+    initAck = Init {
         initType = initAckChunkType,
-        initLength = (fromIntegral initFixedLength) + (fromIntegral cookieLength),
+        initLength = sum $ map fromIntegral [initFixedLength, cookieLength] ,
         initiateTag = fromIntegral myVT,
         advertisedReceiverWindowCredit = advertisedReceiverWindowCredit initChunk, -- TODO be smart
         numberOfOutboundStreams = 1,
@@ -215,13 +241,6 @@ handleInit socket@ListenSocket{} address message = do
         initialTSN  = fromIntegral myTSN,
         parameters = [Parameter cookieType (fromIntegral cookieLength) (serializeCookie signedCookie)]
     }
-
-    socketSendMessage socket (address, fromIntegral portnum) (Message newHeader [toChunk initAck])
-  where
-    mHeader = header message
-    initChunk = (fromChunk $ head $ chunks message) :: Init
-    secret = secretKey socket
-    portnum = destinationPortNumber mHeader
 
 
 socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO()

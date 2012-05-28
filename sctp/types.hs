@@ -227,7 +227,7 @@ data Init = Init {
 
 initChunkType = 1 :: Word8
 initAckChunkType = 2 :: Word8
-initFixedLength = 5 * 4
+initFixedLength = 5 * 4 :: Int
 
 instance ChunkType Init where
   fromChunk c = Init initType initLength initiateTag advertisedReceiverWindowCredit
