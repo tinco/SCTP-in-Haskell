@@ -54,9 +54,8 @@ data SocketState = CONNECTING | CONNECTED | CLOSED
 
 -- Transmission Control Block
 data Association = MkAssociation {
-    associationChannel :: Chan Message,
-    peerVerificationTag :: VerificationTag,
-    myVerificationTag :: VerificationTag,
+    associationPeerVT :: VerificationTag,
+    associationVT :: VerificationTag,
     associationState :: MVar AssociationState
 }
 
@@ -126,34 +125,51 @@ connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
 connect stack sockaddr eventhandler = do
     associations <- newMVar Map.empty
     keyValues <- replicateM 4 (randomIO :: IO(Int))
-    let socket = ConnectSocket association verificationTag 
-                 CONNECTING eventhandler stack sockaddr
-    registerSocket stack sockaddr socket
-    initializeConnection socket
+    myVT <- randomIO :: IO Int
+    associationStateVar <- newMVar COOKIEWAIT 
+    myPort <- do 
+        let portnum = 57498
+        return portnum -- TODO obtain portnumber
+
+    let initMessage = makeInit (fromIntegral myVT) myPort
+    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar
+    let myAddr = sockAddr (address stack, fromIntegral myPort)
+    registerSocket stack myAddr socket
+    socketSendMessage socket (peerAddr) initMessage
     return socket
   where
-    association = undefined
-    verificationTag = undefined
+    peerAddr = (ipAddress sockaddr, portNumber sockaddr) 
+    makeInit myVT myPort = message
+      where
+        init = Init {
+            initType = initChunkType,
+            initLength = fromIntegral initFixedLength,
+            initiateTag = myVT,
+            advertisedReceiverWindowCredit = 0,
+            numberOfOutboundStreams = 1,
+            numberOfInboundStreams = 0,
+            initialTSN  = myVT,
+            parameters = []
+        }
 
-initializeConnection socket =
-    socketSendMessage socket address message
-  where
-    init = Init {
-        initType = initChunkType,
-        initLength = fromIntegral initFixedLength,
-        initiateTag = socketVerificationTag socket,
-        advertisedReceiverWindowCredit = 0,
-        numberOfOutboundStreams = 1,
-        numberOfInboundStreams = 0,
-        initialTSN  = socketVerificationTag socket,
-        parameters = []
-    }
+        header = CommonHeader myPort (fromIntegral.portNumber $ sockaddr)  0 0
+        message = Message header [toChunk init]
+    makeConnectionSocket myVT associationStateVar = socket
+      where
+        association = MkAssociation {
+            associationPeerVT = 0,
+            associationVT = myVT,
+            associationState = associationStateVar
+        }
 
-    peerAddress' = peerAddress socket
-    portNumber' = portNumber peerAddress'
-    address = (ipAddress peerAddress', portNumber') -- TODO pick a good portnumber
-    header = CommonHeader (fromIntegral portNumber') (fromIntegral portNumber') 0 0
-    message = Message header [toChunk init]
+        socket = ConnectSocket {
+          association = association,
+          socketVerificationTag = myVT,
+          socketState = CONNECTING,
+          eventhandler = eventhandler,
+          stack = stack,
+          peerAddress = sockaddr
+        }
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
@@ -173,12 +189,17 @@ socketAcceptMessage socket address message =
                         | chunkType firstChunk == cookieEchoChunkType = restChunks
                         | otherwise = allChunks
                 when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho message
-
                 -- dispatch chunks to association
-                associations <- readMVar (associations socket)
-                case Map.lookup tag associations of
-                    Just association -> mapM_ (handleChunk association) toProcess
-                    Nothing -> return () -- handle OOTB cases
+                (eventhandler socket) (Event message)
+                dispatch socket tag toProcess
+  where
+    dispatch ConnectSocket{} _ chunks = do
+        mapM_ (handleChunk (association socket)) chunks
+    dispatch ListenSocket{} tag chunks = do
+        associations <- readMVar (associations socket)
+        case Map.lookup tag associations of
+            Just association -> mapM_ (handleChunk association) chunks
+            Nothing -> return () -- handle OOTB cases
 
 handleChunk association chunk
     | t  == payloadChunkType = handlePayload association $ fromChunk chunk
@@ -196,12 +217,13 @@ handlePayload association chunk =
     undefined
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
-handleInit socket@ConnectSocket{} _ _ = return () -- throw away init's when we're not listening
+handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening
 handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     myVT <- randomIO :: IO Int
     myTSN <- randomIO :: IO Int
     let responseMessage = makeInitResponse address message secret time myVT myTSN
+    (eventhandler socket) (Event message) -- TODO trigger handleInit event
     socketSendMessage socket (address, portnum) responseMessage
   where
     secret = secretKey socket
@@ -214,7 +236,7 @@ makeInitResponse address message secret time myVT myTSN =
     initChunk = (fromChunk $ head $ chunks message) :: Init
     mHeader = header message
     now = timestamp time
-    peerVT = verificationTag mHeader
+    peerVT = initiateTag initChunk
     cookie = Cookie now peerVT
      (advertisedReceiverWindowCredit initChunk)
      (numberOfOutboundStreams initChunk)

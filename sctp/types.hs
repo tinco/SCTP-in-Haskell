@@ -17,7 +17,7 @@ data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
 data Message = Message {
     header :: CommonHeader,
     chunks :: [Chunk]
-}
+} deriving (Show)
 
 serializeMessage message =
     foldl BL.append headerbytes chunkbytes
