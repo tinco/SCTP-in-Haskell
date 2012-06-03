@@ -95,6 +95,12 @@ data Chunk = Chunk {
   value :: BL.ByteString
 } deriving (Show, Eq)
 
+{-data AnyChunkType = forall t. ChunkType t => AnyChunkType t deriving (Show)-}
+{-fromTypedChunk :: Word8 -> Chunk -> AnyChunkType-}
+{-fromTypedChunk (initChunkType) c = fromChunk c :: Init-}
+{-fromTypedChunk (initAckChunkType) c = fromChunk c :: Init-}
+{-fromTypedChunk (cookieEchoChunkType) c = fromChunk c :: CookieEcho-}
+
 instance ChunkType Chunk where
   toChunk = id
   fromChunk = id
@@ -150,7 +156,6 @@ data Payload = Payload {
 } deriving (Show, Eq)
 
 payloadChunkType = 0 :: Word8
-
 instance ChunkType Payload where
   fromChunk c = Payload reserved u b e dataLength tsn streamIdentifier
                   streamSequenceNumber payloadProtocolIdentifier userData
@@ -239,7 +244,7 @@ instance ChunkType Init where
   toChunk i =
     Chunk chunkType flags cLength value
     where
-      chunkType = 1
+      chunkType = (initType i)
       flags = 0
       cLength = initLength i
       value = runPut $ do

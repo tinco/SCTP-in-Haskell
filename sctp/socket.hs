@@ -46,6 +46,10 @@ data Socket =
       peerAddress :: NS.SockAddr
   }
 
+instance Show Socket where
+  show ConnectSocket {} = "ConnectSocket"
+  show ListenSocket {} = "ListenSocket"
+
 data Event = Event {
     eventMessage :: Message
 }
@@ -189,9 +193,11 @@ socketAcceptMessage socket address message =
                         | chunkType firstChunk == cookieEchoChunkType = restChunks
                         | otherwise = allChunks
                 when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho message
-                -- dispatch chunks to association
-                (eventhandler socket) (Event message)
-                dispatch socket tag toProcess
+                unless (toProcess == []) $ do
+                   -- We got a valid message
+                    (eventhandler socket) (Event message)
+                    -- dispatch chunks to association
+                    dispatch socket tag toProcess
   where
     dispatch ConnectSocket{} _ chunks = do
         mapM_ (handleChunk (association socket)) chunks
@@ -202,11 +208,16 @@ socketAcceptMessage socket address message =
             Nothing -> return () -- handle OOTB cases
 
 handleChunk association chunk
-    | t  == payloadChunkType = handlePayload association $ fromChunk chunk
-    | t  == shutdownChunkType = handleShutdown association $ fromChunk chunk
-    | otherwise = return() -- exception?
+    | t == initAckChunkType = handleInitAck association $ fromChunk chunk
+    | t == payloadChunkType = handlePayload association $ fromChunk chunk
+    | t == shutdownChunkType = handleShutdown association $ fromChunk chunk
+    | otherwise = putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
+
+handleInitAck :: Association -> Init -> IO()
+handleInitAck association initAck = do
+    putStrLn "Got init Ack"
 
 handleShutdown :: Association -> Shutdown -> IO()
 handleShutdown association chunk =
@@ -225,6 +236,7 @@ handleInit socket@ListenSocket{} address message = do
     let responseMessage = makeInitResponse address message secret time myVT myTSN
     (eventhandler socket) (Event message) -- TODO trigger handleInit event
     socketSendMessage socket (address, portnum) responseMessage
+    return ()
   where
     secret = secretKey socket
     portnum = fromIntegral $ (destinationPortNumber.header) message
@@ -265,47 +277,13 @@ makeInitResponse address message secret time myVT myTSN =
     }
 
 
-socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO()
-socketSendMessage socket address message =
-    NSB.sendManyTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
+socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO(Int)
+socketSendMessage socket address message = do
+    NSB.sendTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
   where
-    messageBytes = BL.toChunks $ serializeMessage message
+    messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
 handleCookieEcho message =
-    undefined
-
-
-    -- let handler =
-    --         case () of _
-    --                     | t == payloadChunkType -> handlePayload
-    --                     | t == cookieChunkType -> handleCookie
-    --         where t = toInteger $ chunkType chunk
-    -- handler stack $ fromChunk chunk
-    -- listenLoop stack
-
-{- Connect to a remote socket at address -}
---connect :: SCTP -> NS.SockAddr -> IO (Socket)
---connect stack remoteAddress =
---    undefined
-    -- maak een nieuwe socket aan
-    -- registreer de nieuwe socket bij stack
-    -- initieer de socket in de connect staat
-
-    -- NS.sendTo rawSock packed_init_chunk (sockAddr remoteAddress)
-    -- where
-    --     common_header = CommonHeader (portNumber . sockAddress $ sock)
-    --        (portNumber remoteAddress) 0 0
-    --    rawSock = underLyingSocket sock
-    --    init_chunk = undefined
-    --    packed_init_chunk = undefined
-
-connectSocketLoop socket = forever $ do
-    --message <- readChan $ socketInputChannel socket
-    --let tag = verificationTag $ header message
-    --associations <- readMVar (associations socket)
-    --case Map.lookup tag associations of
-    --    Just channel -> writeChan channel message
-    --    Nothing -> return ()
     undefined
 
 sendToSocket :: IO()
