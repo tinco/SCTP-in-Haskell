@@ -43,7 +43,8 @@ data Socket =
       socketState :: SocketState,
       eventhandler :: (Event -> IO()),
       stack :: SCTP,
-      peerAddress :: NS.SockAddr
+      peerAddress :: NS.SockAddr,
+      socketAddress :: NS.SockAddr
   }
 
 instance Show Socket where
@@ -60,7 +61,9 @@ data SocketState = CONNECTING | CONNECTED | CLOSED
 data Association = MkAssociation {
     associationPeerVT :: VerificationTag,
     associationVT :: VerificationTag,
-    associationState :: MVar AssociationState
+    associationState :: MVar AssociationState,
+    associationPort :: PortNum,
+    associationPeerPort :: PortNum
 }
 
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
@@ -136,8 +139,8 @@ connect stack sockaddr eventhandler = do
         return portnum -- TODO obtain portnumber
 
     let initMessage = makeInit (fromIntegral myVT) myPort
-    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar
     let myAddr = sockAddr (address stack, fromIntegral myPort)
+    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar myAddr myPort
     registerSocket stack myAddr socket
     socketSendMessage socket (peerAddr) initMessage
     return socket
@@ -158,12 +161,14 @@ connect stack sockaddr eventhandler = do
 
         header = CommonHeader myPort (fromIntegral.portNumber $ sockaddr)  0 0
         message = Message header [toChunk init]
-    makeConnectionSocket myVT associationStateVar = socket
+    makeConnectionSocket myVT associationStateVar myAddr myPort = socket
       where
         association = MkAssociation {
             associationPeerVT = 0,
             associationVT = myVT,
-            associationState = associationStateVar
+            associationState = associationStateVar,
+            associationPort = myPort,
+            associationPeerPort = fromIntegral $ portNumber sockaddr
         }
 
         socket = ConnectSocket {
@@ -172,7 +177,8 @@ connect stack sockaddr eventhandler = do
           socketState = CONNECTING,
           eventhandler = eventhandler,
           stack = stack,
-          peerAddress = sockaddr
+          peerAddress = sockaddr,
+          socketAddress = myAddr
         }
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
@@ -200,30 +206,55 @@ socketAcceptMessage socket address message =
                     dispatch socket tag toProcess
   where
     dispatch ConnectSocket{} _ chunks = do
-        mapM_ (handleChunk (association socket)) chunks
+        mapM_ (handleChunk socket (association socket)) chunks
     dispatch ListenSocket{} tag chunks = do
         associations <- readMVar (associations socket)
         case Map.lookup tag associations of
-            Just association -> mapM_ (handleChunk association) chunks
+            Just association -> mapM_ (handleChunk socket association) chunks
             Nothing -> return () -- handle OOTB cases
 
-handleChunk association chunk
-    | t == initAckChunkType = handleInitAck association $ fromChunk chunk
-    | t == payloadChunkType = handlePayload association $ fromChunk chunk
-    | t == shutdownChunkType = handleShutdown association $ fromChunk chunk
+handleChunk socket association chunk
+    | t == initAckChunkType = handleInitAck socket association $ fromChunk chunk
+    | t == payloadChunkType = handlePayload socket association $ fromChunk chunk
+    | t == shutdownChunkType = handleShutdown socket association $ fromChunk chunk
     | otherwise = putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
 
-handleInitAck :: Association -> Init -> IO()
-handleInitAck association initAck = do
-    putStrLn "Got init Ack"
+makeHeader association check = CommonHeader {
+    sourcePortNumber = associationPort association,
+    destinationPortNumber = associationPeerPort association,
+    verificationTag = associationPeerVT association,
+    checksum = check
+}
 
-handleShutdown :: Association -> Shutdown -> IO()
+handleInitAck :: Socket -> Association -> Init -> IO()
+handleInitAck socket association initAck = do
+    registerSocket (stack socket) (socketAddress socket) newSocket
+    let cookieEcho = makeCookieEcho association initAck
+    let peerAddr = peerAddress socket
+    -- putStrLn $ show initAck
+    socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
+    swapMVar (associationState association) COOKIEECHOED
+    return ()
+  where
+    peerVT = initiateTag initAck
+    newAssociation = association { associationPeerVT = peerVT}
+    newSocket = socket { association = newAssociation}
+
+makeCookieEcho association init = Message (makeHeader association check) [toChunk echo]
+  where
+    cookie = head $ parameters init
+    echo = CookieEcho {
+        cookieEcho = serializeParameter cookie
+    }
+    check = 0
+
+handleShutdown :: Socket -> Association -> Shutdown -> IO()
 handleShutdown association chunk =
     undefined
 
-handlePayload :: Association -> Payload -> IO()
+handlePayload :: Socket -> Association -> Payload -> IO()
 handlePayload association chunk =
     undefined
 
@@ -284,7 +315,7 @@ socketSendMessage socket address message = do
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
 handleCookieEcho message =
-    undefined
+    putStrLn "Got cookie Echo"
 
 sendToSocket :: IO()
 sendToSocket = do

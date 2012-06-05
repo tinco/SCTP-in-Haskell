@@ -335,7 +335,7 @@ deserializeParameters bytes = parameter : other_parameters
 -}
 
 cookieType = 7 :: Word16
-cookieLength = 20 + macLength
+cookieLength = 24 + macLength -- TODO why is this 24?
 macLength = 20
 
 data Cookie = Cookie {
@@ -400,20 +400,19 @@ deserializeCookie = runGet $ do
 -}
 
 data CookieEcho = CookieEcho {
-  cookieEchoLength :: Word16,
   cookieEcho :: BL.ByteString
 } deriving (Show, Eq)
 
 cookieEchoChunkType = 10 :: Word8
+cookieEchoLength = 4 + (fromIntegral cookieLength) :: Word16
 
 instance ChunkType CookieEcho where
-  fromChunk c = CookieEcho cookieEchoLength cookieEcho
+  fromChunk c = CookieEcho cookieEcho
     where
-      cookieEchoLength = chunkLength c
       cookieEcho = value c
 
   toChunk i =
-    Chunk (cookieEchoChunkType) 0 (cookieEchoLength i) (cookieEcho i)
+    Chunk (cookieEchoChunkType) 0 (cookieEchoLength) (cookieEcho i)
 
 serializeCookieEcho i = (serializeChunk . toChunk) i
 
