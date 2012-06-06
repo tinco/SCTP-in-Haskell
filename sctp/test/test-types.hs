@@ -3,6 +3,7 @@ import SCTP.Types
 import Test.QuickCheck
 import Test.QuickCheck.All
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Control.Monad
 import Data.Word
 
@@ -29,8 +30,7 @@ instance Arbitrary MacArguments where
                      `ap` arbitrary
                      `ap` arbitrary
                      `ap` arbitrary
-                     `ap` (elements [macZeroes, zeroes 10, zeroes 60])
-
+                     `ap` (elements [zeroes 1,macZeroes, zeroes 10, zeroes 60])
 
 macZeroes = zeroes macLength
 zeroes length = BS.pack $ take length $ repeat (fromIntegral 0)
@@ -41,8 +41,20 @@ prop_serializingCookies c = deserialized == c
     serialized = serializeCookie c
     (deserialized, _) = deserializeCookie serialized
 
+prop_serializedCookieLength :: Cookie -> Bool 
+prop_serializedCookieLength c = BL.length serialized == fromIntegral cookieLength
+  where
+    serialized = serializeCookie c
+
 prop_makeMacHasRightLength :: MacArguments -> Bool
 prop_makeMacHasRightLength args = (BS.length mac) == macLength
   where
     MacArguments cookie vt addr port secret = args
     mac = makeMac cookie vt addr port secret
+
+{-prop_serializingParameter :: Parameter -> Bool
+prop_serializingCookies p = deserialized == p
+  where
+    serialized = serializeParameter p
+    (deserialized, _) = deserializeParameter serialized
+    -}

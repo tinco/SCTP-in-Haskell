@@ -336,7 +336,7 @@ deserializeParameters bytes = parameter : other_parameters
 -}
 
 cookieType = 7 :: Word16
-cookieLength = 24 + macLength -- TODO why is this 24?
+cookieLength = 20
 macLength = 20
 
 data Cookie = Cookie {
