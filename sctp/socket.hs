@@ -63,7 +63,8 @@ data Association = MkAssociation {
     associationVT :: VerificationTag,
     associationState :: MVar AssociationState,
     associationPort :: PortNum,
-    associationPeerPort :: PortNum
+    associationPeerPort :: PortNum,
+    associationSocket :: Socket
 }
 
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
@@ -168,7 +169,8 @@ connect stack sockaddr eventhandler = do
             associationVT = myVT,
             associationState = associationStateVar,
             associationPort = myPort,
-            associationPeerPort = fromIntegral $ portNumber sockaddr
+            associationPeerPort = fromIntegral $ portNumber sockaddr,
+            associationSocket = socket
         }
 
         socket = ConnectSocket {
@@ -180,6 +182,12 @@ connect stack sockaddr eventhandler = do
           peerAddress = sockaddr,
           socketAddress = myAddr
         }
+
+setAssociationFieldVT assc vt = newAssociation
+  where
+    newAssociation = assc {associationSocket = newSocket, associationVT = vt}
+    newSocket      = (associationSocket assc) { association = newAssociation  }
+-- newSocket = socket {association = newAssociation}
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
@@ -198,20 +206,20 @@ socketAcceptMessage socket address message =
                 let toProcess
                         | chunkType firstChunk == cookieEchoChunkType = restChunks
                         | otherwise = allChunks
-                when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho message
+                when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket message
                 unless (toProcess == []) $ do
-                   -- We got a valid message
                     (eventhandler socket) (Event message)
-                    -- dispatch chunks to association
-                    dispatch socket tag toProcess
+                    maybeAssociation <- getAssociation socket tag
+                    case maybeAssociation of
+                        Just association  ->
+                            mapM_ (handleChunk socket association) toProcess
+                        Nothing -> return()
   where
-    dispatch ConnectSocket{} _ chunks = do
-        mapM_ (handleChunk socket (association socket)) chunks
-    dispatch ListenSocket{} tag chunks = do
-        associations <- readMVar (associations socket)
-        case Map.lookup tag associations of
-            Just association -> mapM_ (handleChunk socket association) chunks
-            Nothing -> return () -- handle OOTB cases
+    getAssociation ConnectSocket{} _ = do
+        return $ Just (association socket)
+    getAssociation ListenSocket{} tag = do
+        assocs <- readMVar (associations socket)
+        return $ Map.lookup tag assocs
 
 handleChunk socket association chunk
     | t == initAckChunkType = handleInitAck socket association $ fromChunk chunk
@@ -314,8 +322,23 @@ socketSendMessage socket address message = do
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
-handleCookieEcho message =
-    putStrLn "Got cookie Echo"
+handleCookieEcho socket@ConnectSocket{} message = return ()
+handleCookieEcho socket@ListenSocket{} message = do
+    putStrLn $ "Got cookie Echo: " ++ (show good)
+    putStrLn $ "myMac:" ++ (show myMac)
+    putStrLn $ "their mac: " ++ (show $ mac cookie)
+  where
+    cookieChunk = fromChunk $ head $ chunks message
+    (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
+    myVT = verificationTag $ header message
+    myAddress = address $ stack socket
+    myPortnum = destinationPortNumber $ header message
+    secret = secretKey $ socket
+    myMac = makeMac cookie (fromIntegral myVT) myAddress myPortnum secret
+    good = myMac == (mac cookie)
+    -- reconstruct tcb, check that tcb hash matches with
+    -- hash in cookie
+    -- if it does registerSocket and the association is done
 
 sendToSocket :: IO()
 sendToSocket = do

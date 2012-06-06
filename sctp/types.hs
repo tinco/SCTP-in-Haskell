@@ -9,6 +9,7 @@ import qualified Data.Binary.Strict.BitGet as BG
 import Data.Word
 import Data.Bits
 import Data.HMAC
+import Debug.Trace
 
 data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
     deriving (Show, Eq, Ord)
@@ -348,7 +349,9 @@ data Cookie = Cookie {
   mac :: BS.ByteString
 } deriving (Show, Eq)
 
-makeMac cookie myVerificationTag address portnum secret = mac
+makeMac cookie myVerificationTag address portnum secret =
+  --trace ("makeMac:" ++ (show (cookie, myVerificationTag, address, portnum, secret))) 
+  mac
   where
     addrBytes = case address of
         IPv4 b -> [b]
@@ -375,6 +378,7 @@ serializeCookie c = runPut $ do
     putWord32be $ myTSN c
     putByteString $ mac c
 
+deserializeCookie :: BL.ByteString -> (Cookie, BL.ByteString)
 deserializeCookie = runGet $ do
     cookieCreationTime <- getWord32be
     peerVerificationTag <- getWord32be
