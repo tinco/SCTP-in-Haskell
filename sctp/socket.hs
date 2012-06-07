@@ -312,7 +312,7 @@ makeInitResponse address message secret time myVT myTSN =
         numberOfOutboundStreams = 1,
         numberOfInboundStreams = 1,
         initialTSN  = fromIntegral myTSN,
-        parameters = [Parameter cookieType (fromIntegral cookieLength) (serializeCookie signedCookie)]
+        parameters = [Parameter cookieType (fromIntegral cookieLength + fromIntegral parameterFixedLength) (serializeCookie signedCookie)]
     }
 
 

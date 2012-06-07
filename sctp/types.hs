@@ -292,6 +292,8 @@ data Parameter = Parameter {
   parameterValue :: BL.ByteString
 } deriving (Show, Eq)
 
+parameterFixedLength = 4
+
 serializeParameter :: Parameter -> BL.ByteString
 serializeParameter p = runPut $ do
     putWord16be (parameterType p)
@@ -302,7 +304,7 @@ deserializeParameter :: BL.ByteString -> (Parameter, BL.ByteString)
 deserializeParameter = runGet $ do
     pType <- getWord16be
     pLength <- getWord16be
-    value <- getLazyByteString (fromIntegral pLength)
+    value <- getLazyByteString (fromIntegral pLength - parameterFixedLength)
     rest <- getRemainingLazyByteString
     return $ (Parameter pType pLength value, rest)
 
@@ -336,7 +338,7 @@ deserializeParameters bytes = parameter : other_parameters
 -}
 
 cookieType = 7 :: Word16
-cookieLength = 20
+cookieLength = 20 + macLength
 macLength = 20
 
 data Cookie = Cookie {

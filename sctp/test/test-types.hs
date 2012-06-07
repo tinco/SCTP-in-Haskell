@@ -32,6 +32,9 @@ instance Arbitrary MacArguments where
                      `ap` arbitrary
                      `ap` (elements [zeroes 1,macZeroes, zeroes 10, zeroes 60])
 
+instance Arbitrary Parameter where
+    arbitrary = liftM3 Parameter (elements [cookieType]) (elements [fromIntegral cookieLength + 4]) (liftM serializeCookie arbitrary)
+
 macZeroes = zeroes macLength
 zeroes length = BS.pack $ take length $ repeat (fromIntegral 0)
 
@@ -52,9 +55,32 @@ prop_makeMacHasRightLength args = (BS.length mac) == macLength
     MacArguments cookie vt addr port secret = args
     mac = makeMac cookie vt addr port secret
 
-{-prop_serializingParameter :: Parameter -> Bool
-prop_serializingCookies p = deserialized == p
+prop_serializingParameter :: Parameter -> Bool
+prop_serializingParameter p = deserialized == p
   where
     serialized = serializeParameter p
     (deserialized, _) = deserializeParameter serialized
-    -}
+
+prop_serializingChunk :: Chunk -> Bool
+prop_serializingChunk p = deserialized == p
+  where
+    serialized = serializeChunk p
+    (deserialized, _) = deserializeChunk serialized
+
+instance Arbitrary Chunk  where
+    arbitrary = liftM toChunk (oneof [arbitrary :: Gen Init])
+
+instance Arbitrary Init where
+    arbitrary = liftM Init arbitrary
+                     `ap` length
+                     `ap` arbitrary
+                     `ap` arbitrary
+                     `ap` arbitrary
+                     `ap` arbitrary
+                     `ap` arbitrary
+                     `ap` liftM (\p -> p : []) arbitrary
+      where
+        parameter = arbitrary
+        pLength = liftM (fromIntegral.parameterLength) parameter
+        fLength = elements [fromIntegral initFixedLength]
+        length = liftM2 (+) fLength pLength
