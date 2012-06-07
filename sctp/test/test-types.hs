@@ -67,6 +67,13 @@ prop_serializingChunk p = deserialized == p
     serialized = serializeChunk p
     (deserialized, _) = deserializeChunk serialized
 
+prop_serializingInit :: Init -> Bool
+prop_serializingInit i = deserialized == i
+  where
+    serialized = serializeInit i
+    (deserializedChunk, _) = deserializeChunk serialized
+    deserialized = fromChunk deserializedChunk :: Init
+
 instance Arbitrary Chunk  where
     arbitrary = liftM toChunk (oneof [arbitrary :: Gen Init])
 
