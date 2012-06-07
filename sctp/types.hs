@@ -388,7 +388,7 @@ deserializeCookie = runGet $ do
     outboundStreams <- getWord16be
     maxInboundStreams <- getWord16be
     myTSN <- getWord32be
-    mac <- getByteString macLength
+    mac <- getByteString $ macLength
     rest <- getRemainingLazyByteString
     return (Cookie cookieCreationTime peerVerificationTag
              windowCredit outboundStreams maxInboundStreams myTSN mac, rest)

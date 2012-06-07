@@ -13,5 +13,5 @@ main = do
     getLine
     return ()
   where
-    listenHandler e = putStrLn "Listen had event"
-    connectHandler e = putStrLn "Connect had event"
+    listenHandler e = return ()-- putStrLn "Listen had event"
+    connectHandler e = return () --putStrLn "Connect had event"

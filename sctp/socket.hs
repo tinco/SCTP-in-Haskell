@@ -82,7 +82,7 @@ portNumber (NS.SockAddrInet6 port flow host scope) = port
 
 sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
 sockAddr (IPv4 host, port) = NS.SockAddrInet port host
-sockAddr (IPv6 host, port) = NS.SockAddrInet6 port undefined host undefined
+sockAddr (IPv6 host, port) = NS.SockAddrInet6 port 0 host 0
 
 {- Get the default local server address -}
 localServerAddress = do
@@ -195,7 +195,8 @@ registerSocket stack addr socket =
     modifyMVar_ (instances stack) (return . Map.insert (ipAddress addr, fromIntegral(portNumber addr)) socket)
 
 socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
-socketAcceptMessage socket address message =
+socketAcceptMessage socket address message = do
+    --putStrLn $ "AcceptMessage: " ++ show message
     -- Drop packet if verifyChecksum fails
     when (verifyChecksum message) $ do
         let tag = verificationTag $ header message
@@ -225,7 +226,7 @@ handleChunk socket association chunk
     | t == initAckChunkType = handleInitAck socket association $ fromChunk chunk
     | t == payloadChunkType = handlePayload socket association $ fromChunk chunk
     | t == shutdownChunkType = handleShutdown socket association $ fromChunk chunk
-    | otherwise = putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
+    | otherwise = return ()--putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
 
@@ -250,21 +251,23 @@ handleInitAck socket association initAck = do
     newAssociation = association { associationPeerVT = peerVT}
     newSocket = socket { association = newAssociation}
 
-makeCookieEcho association init = Message (makeHeader association check) [toChunk echo]
+makeCookieEcho association init =
+    Message (makeHeader association check) [toChunk echo]
   where
-    cookie = head $ parameters init
+    cookieParameter = head $ parameters init
+    cookie = deserializeCookie $ parameterValue cookieParameter
     echo = CookieEcho {
-        cookieEcho = serializeParameter cookie
+        cookieEcho = parameterValue cookieParameter
     }
     check = 0
 
 handleShutdown :: Socket -> Association -> Shutdown -> IO()
-handleShutdown association chunk =
-    undefined
+handleShutdown socket association chunk = do
+    putStrLn "handleShutdown"
 
 handlePayload :: Socket -> Association -> Payload -> IO()
-handlePayload association chunk =
-    undefined
+handlePayload socket association chunk = do 
+    putStrLn "handlePayload"
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening
@@ -272,6 +275,7 @@ handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     myVT <- randomIO :: IO Int
     myTSN <- randomIO :: IO Int
+    putStrLn "Handling init"
     let responseMessage = makeInitResponse address message secret time myVT myTSN
     (eventhandler socket) (Event message) -- TODO trigger handleInit event
     socketSendMessage socket (address, portnum) responseMessage
@@ -281,6 +285,7 @@ handleInit socket@ListenSocket{} address message = do
     portnum = fromIntegral $ (destinationPortNumber.header) message
 
 makeInitResponse address message secret time myVT myTSN =
+ --   trace ("Sending Cookie: " ++ (show signedCookie)) $
     Message newHeader [toChunk initAck]
   where
     portnum = destinationPortNumber mHeader
@@ -306,7 +311,7 @@ makeInitResponse address message secret time myVT myTSN =
 
     initAck = Init {
         initType = initAckChunkType,
-        initLength = sum $ map fromIntegral [initFixedLength, cookieLength] ,
+        initLength = sum $ map fromIntegral [initFixedLength, fromIntegral parameterFixedLength, cookieLength] ,
         initiateTag = fromIntegral myVT,
         advertisedReceiverWindowCredit = advertisedReceiverWindowCredit initChunk, -- TODO be smart
         numberOfOutboundStreams = 1,
@@ -318,13 +323,16 @@ makeInitResponse address message secret time myVT myTSN =
 
 socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO(Int)
 socketSendMessage socket address message = do
+    --putStrLn $ "SendMessage: " ++ show message
     NSB.sendTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
+handleCookieEcho :: Socket -> Message -> IO()
 handleCookieEcho socket@ConnectSocket{} message = return ()
 handleCookieEcho socket@ListenSocket{} message = do
-    putStrLn $ "Got cookie Echo: " ++ (show good)
+    putStrLn $ "Got cookie Echo: " ++ (show message)
+    putStrLn $ "Cookie: " ++ show cookie
     putStrLn $ "myMac:" ++ (show myMac)
     putStrLn $ "their mac: " ++ (show $ mac cookie)
   where

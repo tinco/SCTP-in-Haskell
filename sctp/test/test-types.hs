@@ -75,7 +75,13 @@ prop_serializingInit i = deserialized == i
     deserialized = fromChunk deserializedChunk :: Init
 
 instance Arbitrary Chunk  where
-    arbitrary = liftM toChunk (oneof [arbitrary :: Gen Init])
+    arbitrary = oneof [
+                liftM toChunk (oneof [arbitrary :: Gen Init]),
+                liftM toChunk (oneof [arbitrary :: Gen CookieEcho])
+                ]
+
+instance Arbitrary CookieEcho where
+    arbitrary = liftM CookieEcho (liftM serializeCookie arbitrary)
 
 instance Arbitrary Init where
     arbitrary = liftM Init arbitrary
