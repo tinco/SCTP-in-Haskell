@@ -353,6 +353,7 @@ data Cookie = Cookie {
 
 makeMac cookie myVerificationTag address portnum secret =
   --trace ("makeMac:" ++ (show (cookie, myVerificationTag, address, portnum, secret))) 
+  --trace ("makeMac result:" ++ show mac) 
   mac
   where
     addrBytes = case address of

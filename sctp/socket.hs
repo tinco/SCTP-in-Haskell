@@ -240,7 +240,7 @@ makeHeader association check = CommonHeader {
 handleInitAck :: Socket -> Association -> Init -> IO()
 handleInitAck socket association initAck = do
     registerSocket (stack socket) (socketAddress socket) newSocket
-    let cookieEcho = makeCookieEcho association initAck
+    let cookieEcho = makeCookieEcho newAssociation initAck
     let peerAddr = peerAddress socket
     -- putStrLn $ show initAck
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
@@ -275,7 +275,7 @@ handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     myVT <- randomIO :: IO Int
     myTSN <- randomIO :: IO Int
-    putStrLn "Handling init"
+    --putStrLn "Handling init"
     let responseMessage = makeInitResponse address message secret time myVT myTSN
     (eventhandler socket) (Event message) -- TODO trigger handleInit event
     socketSendMessage socket (address, portnum) responseMessage
@@ -285,7 +285,7 @@ handleInit socket@ListenSocket{} address message = do
     portnum = fromIntegral $ (destinationPortNumber.header) message
 
 makeInitResponse address message secret time myVT myTSN =
- --   trace ("Sending Cookie: " ++ (show signedCookie)) $
+    --trace ("Sending Cookie: " ++ (show signedCookie)) $
     Message newHeader [toChunk initAck]
   where
     portnum = destinationPortNumber mHeader
@@ -331,10 +331,12 @@ socketSendMessage socket address message = do
 handleCookieEcho :: Socket -> Message -> IO()
 handleCookieEcho socket@ConnectSocket{} message = return ()
 handleCookieEcho socket@ListenSocket{} message = do
-    putStrLn $ "Got cookie Echo: " ++ (show message)
-    putStrLn $ "Cookie: " ++ show cookie
-    putStrLn $ "myMac:" ++ (show myMac)
-    putStrLn $ "their mac: " ++ (show $ mac cookie)
+    when validMac $ do
+        assocs <- takeMVar $ associations socket
+        association' <- liftM association (newMVar ESTABLISHED)
+        let newAssocs =  Map.insert myVT association' assocs
+        putMVar (associations socket) newAssocs
+        --socketSendMessage socket () cookieAck
   where
     cookieChunk = fromChunk $ head $ chunks message
     (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
@@ -343,9 +345,11 @@ handleCookieEcho socket@ListenSocket{} message = do
     myPortnum = destinationPortNumber $ header message
     secret = secretKey $ socket
     myMac = makeMac cookie (fromIntegral myVT) myAddress myPortnum secret
-    good = myMac == (mac cookie)
-    -- reconstruct tcb, check that tcb hash matches with
-    -- hash in cookie
+    validMac = myMac == (mac cookie)
+    peerVT =  peerVerificationTag cookie
+    peerPort = sourcePortNumber $ header message
+    peerAddr = 
+    association = (\state -> MkAssociation peerVT myVT state myPortnum peerPort socket)
     -- if it does registerSocket and the association is done
 
 sendToSocket :: IO()
