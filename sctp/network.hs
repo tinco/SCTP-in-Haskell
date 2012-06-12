@@ -1,4 +1,6 @@
 import SCTP.Socket
+import SCTP.Socket.Types
+import SCTP.Socket.Utils
 
 main :: IO ()
 main = do

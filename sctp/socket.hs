@@ -11,6 +11,8 @@ import Control.Concurrent
 import Debug.Trace
 import SCTP.Types
 import SCTP.Utils
+import SCTP.Socket.Types
+import SCTP.Socket.Utils
 import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
@@ -22,77 +24,6 @@ protocolNumber = 132 -- at least I think it is..
                      -- OS limitations wrt capturing kernel protocols
 
 maxMessageSize = 4096 -- RFC specifies minimum of 1500
-
-data SCTP = MkSCTP {
-    underLyingSocket :: NS.Socket,
-    address :: IpAddress,
-    instances :: MVar (Map.Map (IpAddress, PortNum) Socket)
-}
-
-data Socket =  
-  -- Socket is an instance of SCTP
-  ListenSocket {
-      associations :: MVar (Map.Map VerificationTag Association),
-      secretKey :: BS.ByteString,
-      stack :: SCTP,
-      eventhandler :: (Event -> IO())
-  } |
-  ConnectSocket {
-      association :: Association,
-      socketVerificationTag :: VerificationTag,
-      socketState :: SocketState,
-      eventhandler :: (Event -> IO()),
-      stack :: SCTP,
-      peerAddress :: NS.SockAddr,
-      socketAddress :: NS.SockAddr
-  }
-
-instance Show Socket where
-  show ConnectSocket {} = "ConnectSocket"
-  show ListenSocket {} = "ListenSocket"
-
-data Event = OtherEvent Message
-           | Established Association
-           | Closed Association
-
-data SocketState = CONNECTING | CONNECTED | CLOSED
-
--- Transmission Control Block
-data Association = MkAssociation {
-    associationPeerVT :: VerificationTag,
-    associationVT :: VerificationTag,
-    associationState :: MVar AssociationState,
-    associationPort :: PortNum,
-    associationPeerAddress :: NS.SockAddr,
-    associationSocket :: Socket
-}
-
-data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
-                        SHUTDOWNPENDING | SHUTDOWNSENT | SHUTDOWNRECEIVED |
-                        SHUTDOWNACKSENT
-
-
-ipAddress :: NS.SockAddr -> IpAddress
-ipAddress (NS.SockAddrInet port host) = IPv4 host
-ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
-
-portNumber :: NS.SockAddr -> NS.PortNumber
-portNumber (NS.SockAddrInet port host) = port
-portNumber (NS.SockAddrInet6 port flow host scope) = port
-
-sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
-sockAddr (IPv4 host, port) = NS.SockAddrInet port host
-sockAddr (IPv6 host, port) = NS.SockAddrInet6 port 0 host 0
-
-{- Get the default local server address -}
-localServerAddress = do
-    host <- NBSD.getHostByName "localhost"
-    return $ NBSD.hostAddress host
-
-testUdpPort = 54312
-testUdpAddress port = do
-    localhost <- localServerAddress -- default serveraddress for localhost
-    return (NS.SockAddrInet port localhost)
 
 {- Create an udp socket and use that as the raw socket backend -}
 start_on_udp :: NS.SockAddr -> IO (SCTP)
@@ -183,12 +114,6 @@ connect stack sockaddr eventhandler = do
           socketAddress = myAddr
         }
 
-setAssociationFieldVT assc vt = newAssociation
-  where
-    newAssociation = assc {associationSocket = newSocket, associationVT = vt}
-    newSocket      = (associationSocket assc) { association = newAssociation  }
--- newSocket = socket {association = newAssociation}
-
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
     -- TODO simply overrides existing sockets, is this what we want?
@@ -230,14 +155,6 @@ handleChunk socket association chunk
   where
     t = chunkType chunk
 
-makeHeader :: Association -> Word32 -> CommonHeader
-makeHeader association check = CommonHeader {
-    sourcePortNumber = associationPort association,
-    destinationPortNumber = (fromIntegral.portNumber.associationPeerAddress) association,
-    verificationTag = associationPeerVT association,
-    checksum = check
-}
-
 handleInitAck :: Socket -> Association -> Init -> IO()
 handleInitAck socket association initAck = do
     registerSocket (stack socket) (socketAddress socket) newSocket
@@ -250,16 +167,6 @@ handleInitAck socket association initAck = do
     peerVT = initiateTag initAck
     newAssociation = association { associationPeerVT = peerVT}
     newSocket = socket { association = newAssociation}
-
-makeCookieEcho association init =
-    Message (makeHeader association check) [toChunk echo]
-  where
-    cookieParameter = head $ parameters init
-    cookie = deserializeCookie $ parameterValue cookieParameter
-    echo = CookieEcho {
-        cookieEcho = parameterValue cookieParameter
-    }
-    check = 0
 
 handleCookieAck :: Socket -> Association -> CookieAck -> IO()
 handleCookieAck socket association initAck = do
@@ -285,43 +192,6 @@ handleInit socket@ListenSocket{} address message = do
   where
     secret = secretKey socket
     portnum = fromIntegral $ (sourcePortNumber.header) message
-
-makeInitResponse address message secret time myVT myTSN =
-    --trace ("Sending Cookie: " ++ (show signedCookie)) $
-    Message newHeader [toChunk initAck]
-  where
-    portnum = destinationPortNumber mHeader
-    initChunk = (fromChunk $ head $ chunks message) :: Init
-    mHeader = header message
-    now = timestamp time
-    peerVT = initiateTag initChunk
-    cookie = Cookie now peerVT
-     (advertisedReceiverWindowCredit initChunk)
-     (numberOfOutboundStreams initChunk)
-     (numberOfInboundStreams initChunk)
-     (fromIntegral myTSN)
-     BS.empty
-
-    signedCookie = cookie { mac = makeMac cookie (fromIntegral myVT) address portnum secret }
-
-    newHeader = CommonHeader {
-        sourcePortNumber = destinationPortNumber mHeader,
-        destinationPortNumber = sourcePortNumber mHeader,
-        verificationTag = peerVT,
-        checksum = 0
-    }
-
-    initAck = Init {
-        initType = initAckChunkType,
-        initLength = sum $ map fromIntegral [initFixedLength, fromIntegral parameterFixedLength, cookieLength] ,
-        initiateTag = fromIntegral myVT,
-        advertisedReceiverWindowCredit = advertisedReceiverWindowCredit initChunk, -- TODO be smart
-        numberOfOutboundStreams = 1,
-        numberOfInboundStreams = 1,
-        initialTSN  = fromIntegral myTSN,
-        parameters = [Parameter cookieType (fromIntegral cookieLength + fromIntegral parameterFixedLength) (serializeCookie signedCookie)]
-    }
-
 
 socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO(Int)
 socketSendMessage socket address message = do
