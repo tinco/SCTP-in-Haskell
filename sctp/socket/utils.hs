@@ -20,12 +20,6 @@ testUdpAddress port = do
     localhost <- localServerAddress -- default serveraddress for localhost
     return (NS.SockAddrInet port localhost)
 
-setAssociationFieldVT assc vt = newAssociation
-  where
-    newAssociation = assc {associationSocket = newSocket, associationVT = vt}
-    newSocket      = (associationSocket assc) { association = newAssociation  }
--- newSocket = socket {association = newAssociation}
-
 makeHeader :: Association -> Word32 -> CommonHeader
 makeHeader association check = CommonHeader {
     sourcePortNumber = associationPort association,

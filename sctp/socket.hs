@@ -62,7 +62,6 @@ listen stack sockaddr eventhandler = do
 {- Connect -}
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
 connect stack sockaddr eventhandler = do
-    associations <- newMVar Map.empty
     keyValues <- replicateM 4 (randomIO :: IO(Int))
     myVT <- randomIO :: IO Int
     associationStateVar <- newMVar COOKIEWAIT 
@@ -72,7 +71,9 @@ connect stack sockaddr eventhandler = do
 
     let initMessage = makeInit (fromIntegral myVT) $ fromIntegral myPort
     let myAddr = sockAddr (address stack, fromIntegral myPort)
-    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar myAddr (fromIntegral myPort)
+    let association = makeAssociation (fromIntegral myVT) associationStateVar $ fromIntegral myPort
+    associationMVar <- newMVar association
+    let socket = makeConnectionSocket (fromIntegral myVT) associationMVar myAddr
     registerSocket stack myAddr socket
     socketSendMessage socket (peerAddr) initMessage
     return socket
@@ -93,17 +94,17 @@ connect stack sockaddr eventhandler = do
 
         header = CommonHeader myPort (fromIntegral.portNumber $ sockaddr)  0 0
         message = Message header [toChunk init]
-    makeConnectionSocket myVT associationStateVar myAddr myPort = socket
+    makeAssociation myVT associationStateVar myPort = association
       where
         association = MkAssociation {
             associationPeerVT = 0,
             associationVT = myVT,
             associationState = associationStateVar,
             associationPort = myPort,
-            associationPeerAddress = sockaddr,
-            associationSocket = socket
+            associationPeerAddress = sockaddr
         }
-
+    makeConnectionSocket myVT association myAddr = socket
+      where
         socket = ConnectSocket {
           association = association,
           socketVerificationTag = myVT,
@@ -141,7 +142,8 @@ socketAcceptMessage socket address message = do
                         Nothing -> return()
   where
     getAssociation ConnectSocket{} _ = do
-        return $ Just (association socket)
+        assoc <- readMVar $ association socket
+        return $ Just assoc
     getAssociation ListenSocket{} tag = do
         assocs <- readMVar (associations socket)
         return $ Map.lookup tag assocs
@@ -156,17 +158,17 @@ handleChunk socket association chunk
     t = chunkType chunk
 
 handleInitAck :: Socket -> Association -> Init -> IO()
-handleInitAck socket association initAck = do
-    registerSocket (stack socket) (socketAddress socket) newSocket
+handleInitAck socket assoc initAck = do
+    --registerSocket (stack socket) (socketAddress socket) newSocket
     let cookieEcho = makeCookieEcho newAssociation initAck
     let peerAddr = peerAddress socket
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
-    swapMVar (associationState association) COOKIEECHOED
+    swapMVar (associationState newAssociation) COOKIEECHOED
+    swapMVar (association socket) newAssociation
     return ()
   where
     peerVT = initiateTag initAck
-    newAssociation = association { associationPeerVT = peerVT}
-    newSocket = socket { association = newAssociation}
+    newAssociation = assoc { associationPeerVT = peerVT}
 
 handleCookieAck :: Socket -> Association -> CookieAck -> IO()
 handleCookieAck socket association initAck = do
@@ -223,5 +225,5 @@ handleCookieEcho socket@ListenSocket{} addr message = do
     peerVT =  peerVerificationTag cookie
     peerPort = sourcePortNumber $ header message
     peerAddr = (addr, fromIntegral peerPort)
-    association = (\state -> MkAssociation peerVT myVT state myPortnum (sockAddr peerAddr) socket)
+    association = (\state -> MkAssociation peerVT myVT state myPortnum (sockAddr peerAddr))
     cookieAckMessage =  (\association -> Message (makeHeader association 0) [toChunk CookieAck])

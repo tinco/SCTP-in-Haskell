@@ -22,7 +22,7 @@ data Socket =
       eventhandler :: (Event -> IO())
   } |
   ConnectSocket {
-      association :: Association,
+      association :: MVar Association,
       socketVerificationTag :: VerificationTag,
       socketState :: SocketState,
       eventhandler :: (Event -> IO()),
@@ -47,8 +47,7 @@ data Association = MkAssociation {
     associationVT :: VerificationTag,
     associationState :: MVar AssociationState,
     associationPort :: PortNum,
-    associationPeerAddress :: NS.SockAddr,
-    associationSocket :: Socket
+    associationPeerAddress :: NS.SockAddr
 }
 
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
