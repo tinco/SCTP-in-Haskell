@@ -63,7 +63,7 @@ data Association = MkAssociation {
     associationVT :: VerificationTag,
     associationState :: MVar AssociationState,
     associationPort :: PortNum,
-    associationPeerPort :: PortNum,
+    associationPeerAddress :: NS.SockAddr,
     associationSocket :: Socket
 }
 
@@ -169,7 +169,7 @@ connect stack sockaddr eventhandler = do
             associationVT = myVT,
             associationState = associationStateVar,
             associationPort = myPort,
-            associationPeerPort = fromIntegral $ portNumber sockaddr,
+            associationPeerAddress = sockaddr,
             associationSocket = socket
         }
 
@@ -207,7 +207,7 @@ socketAcceptMessage socket address message = do
                 let toProcess
                         | chunkType firstChunk == cookieEchoChunkType = restChunks
                         | otherwise = allChunks
-                when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket message
+                when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket address message
                 unless (toProcess == []) $ do
                     (eventhandler socket) (Event message)
                     maybeAssociation <- getAssociation socket tag
@@ -226,13 +226,15 @@ handleChunk socket association chunk
     | t == initAckChunkType = handleInitAck socket association $ fromChunk chunk
     | t == payloadChunkType = handlePayload socket association $ fromChunk chunk
     | t == shutdownChunkType = handleShutdown socket association $ fromChunk chunk
+    | t == cookieAckChunkType = handleCookieAck socket association $ fromChunk chunk
     | otherwise = return ()--putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
 
+makeHeader :: Association -> Word32 -> CommonHeader
 makeHeader association check = CommonHeader {
     sourcePortNumber = associationPort association,
-    destinationPortNumber = associationPeerPort association,
+    destinationPortNumber = (fromIntegral.portNumber.associationPeerAddress) association,
     verificationTag = associationPeerVT association,
     checksum = check
 }
@@ -260,6 +262,10 @@ makeCookieEcho association init =
         cookieEcho = parameterValue cookieParameter
     }
     check = 0
+
+handleCookieAck :: Socket -> Association -> CookieAck -> IO()
+handleCookieAck socket association initAck = do
+    putStrLn "cookieAck"
 
 handleShutdown :: Socket -> Association -> Shutdown -> IO()
 handleShutdown socket association chunk = do
@@ -328,15 +334,16 @@ socketSendMessage socket address message = do
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
-handleCookieEcho :: Socket -> Message -> IO()
-handleCookieEcho socket@ConnectSocket{} message = return ()
-handleCookieEcho socket@ListenSocket{} message = do
+handleCookieEcho :: Socket -> IpAddress -> Message -> IO()
+handleCookieEcho socket@ConnectSocket{} addr message = return ()
+handleCookieEcho socket@ListenSocket{} addr message = do
     when validMac $ do
         assocs <- takeMVar $ associations socket
         association' <- liftM association (newMVar ESTABLISHED)
         let newAssocs =  Map.insert myVT association' assocs
         putMVar (associations socket) newAssocs
-        --socketSendMessage socket () cookieAck
+        socketSendMessage socket peerAddr $ cookieAckMessage association'
+        return ()
   where
     cookieChunk = fromChunk $ head $ chunks message
     (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
@@ -348,9 +355,9 @@ handleCookieEcho socket@ListenSocket{} message = do
     validMac = myMac == (mac cookie)
     peerVT =  peerVerificationTag cookie
     peerPort = sourcePortNumber $ header message
-    peerAddr = 
-    association = (\state -> MkAssociation peerVT myVT state myPortnum peerPort socket)
-    -- if it does registerSocket and the association is done
+    peerAddr = (addr, fromIntegral peerPort)
+    association = (\state -> MkAssociation peerVT myVT state myPortnum (sockAddr peerAddr) socket)
+    cookieAckMessage =  (\association -> Message (makeHeader association 0) [toChunk CookieAck])
 
 sendToSocket :: IO()
 sendToSocket = do
