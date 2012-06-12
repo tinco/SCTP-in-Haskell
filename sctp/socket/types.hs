@@ -45,7 +45,7 @@ data SocketState = CONNECTING | CONNECTED | CLOSED
 data Association = MkAssociation {
     associationPeerVT :: VerificationTag,
     associationVT :: VerificationTag,
-    associationState :: MVar AssociationState,
+    associationState :: AssociationState,
     associationPort :: PortNum,
     associationPeerAddress :: NS.SockAddr
 }

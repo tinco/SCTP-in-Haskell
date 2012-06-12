@@ -64,14 +64,13 @@ connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
 connect stack sockaddr eventhandler = do
     keyValues <- replicateM 4 (randomIO :: IO(Int))
     myVT <- randomIO :: IO Int
-    associationStateVar <- newMVar COOKIEWAIT 
     myPort <- do 
         let portnum = testUdpPort + 1
         return portnum -- TODO obtain portnumber
 
     let initMessage = makeInit (fromIntegral myVT) $ fromIntegral myPort
     let myAddr = sockAddr (address stack, fromIntegral myPort)
-    let association = makeAssociation (fromIntegral myVT) associationStateVar $ fromIntegral myPort
+    let association = makeAssociation (fromIntegral myVT) $ fromIntegral myPort
     associationMVar <- newMVar association
     let socket = makeConnectionSocket (fromIntegral myVT) associationMVar myAddr
     registerSocket stack myAddr socket
@@ -94,12 +93,12 @@ connect stack sockaddr eventhandler = do
 
         header = CommonHeader myPort (fromIntegral.portNumber $ sockaddr)  0 0
         message = Message header [toChunk init]
-    makeAssociation myVT associationStateVar myPort = association
+    makeAssociation myVT myPort = association
       where
         association = MkAssociation {
             associationPeerVT = 0,
             associationVT = myVT,
-            associationState = associationStateVar,
+            associationState = COOKIEWAIT,
             associationPort = myPort,
             associationPeerAddress = sockaddr
         }
@@ -163,12 +162,11 @@ handleInitAck socket assoc initAck = do
     let cookieEcho = makeCookieEcho newAssociation initAck
     let peerAddr = peerAddress socket
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
-    swapMVar (associationState newAssociation) COOKIEECHOED
     swapMVar (association socket) newAssociation
     return ()
   where
     peerVT = initiateTag initAck
-    newAssociation = assoc { associationPeerVT = peerVT}
+    newAssociation = assoc { associationPeerVT = peerVT, associationState = COOKIEECHOED}
 
 handleCookieAck :: Socket -> Association -> CookieAck -> IO()
 handleCookieAck socket association initAck = do
@@ -207,11 +205,10 @@ handleCookieEcho socket@ConnectSocket{} addr message = return ()
 handleCookieEcho socket@ListenSocket{} addr message = do
     when validMac $ do
         assocs <- takeMVar $ associations socket
-        association' <- liftM association (newMVar ESTABLISHED)
-        let newAssocs =  Map.insert myVT association' assocs
+        let newAssocs =  Map.insert myVT association assocs
         putMVar (associations socket) newAssocs
-        (eventhandler socket) $ Established association'
-        socketSendMessage socket peerAddr $ cookieAckMessage association'
+        (eventhandler socket) $ Established association
+        socketSendMessage socket peerAddr $ cookieAckMessage
         return ()
   where
     cookieChunk = fromChunk $ head $ chunks message
@@ -225,5 +222,5 @@ handleCookieEcho socket@ListenSocket{} addr message = do
     peerVT =  peerVerificationTag cookie
     peerPort = sourcePortNumber $ header message
     peerAddr = (addr, fromIntegral peerPort)
-    association = (\state -> MkAssociation peerVT myVT state myPortnum (sockAddr peerAddr))
-    cookieAckMessage =  (\association -> Message (makeHeader association 0) [toChunk CookieAck])
+    association = MkAssociation peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr)
+    cookieAckMessage =  Message (makeHeader association 0) [toChunk CookieAck]
