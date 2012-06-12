@@ -225,15 +225,3 @@ handleCookieEcho socket@ListenSocket{} addr message = do
     peerAddr = (addr, fromIntegral peerPort)
     association = (\state -> MkAssociation peerVT myVT state myPortnum (sockAddr peerAddr) socket)
     cookieAckMessage =  (\association -> Message (makeHeader association 0) [toChunk CookieAck])
-
-sendToSocket :: IO()
-sendToSocket = do
-    sock <- NS.socket NS.AF_INET NS.Datagram NS.defaultProtocol
-    localhost <- localServerAddress
-    NS.bindSocket sock (NS.SockAddrInet (testUdpPort + 1) localhost)
-    NSB.sendTo sock bytes (NS.SockAddrInet testUdpPort localhost)
-    return ()
-    where
-        header = CommonHeader 1 2 3 4
-        chunk = Chunk 1 1 3 (BL.pack [1,1,1])
-        bytes = BS.concat $ map (BS.concat . BL.toChunks)  [serializeCommonHeader header, serializeChunk chunk]
