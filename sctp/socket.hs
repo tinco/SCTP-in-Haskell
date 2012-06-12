@@ -51,9 +51,9 @@ instance Show Socket where
   show ConnectSocket {} = "ConnectSocket"
   show ListenSocket {} = "ListenSocket"
 
-data Event = Event {
-    eventMessage :: Message
-}
+data Event = OtherEvent Message
+           | Established Association
+           | Closed Association
 
 data SocketState = CONNECTING | CONNECTED | CLOSED
 
@@ -90,9 +90,9 @@ localServerAddress = do
     return $ NBSD.hostAddress host
 
 testUdpPort = 54312
-testUdpAddress = do
+testUdpAddress port = do
     localhost <- localServerAddress -- default serveraddress for localhost
-    return (NS.SockAddrInet testUdpPort localhost)
+    return (NS.SockAddrInet port localhost)
 
 {- Create an udp socket and use that as the raw socket backend -}
 start_on_udp :: NS.SockAddr -> IO (SCTP)
@@ -136,12 +136,12 @@ connect stack sockaddr eventhandler = do
     myVT <- randomIO :: IO Int
     associationStateVar <- newMVar COOKIEWAIT 
     myPort <- do 
-        let portnum = 57498
+        let portnum = testUdpPort + 1
         return portnum -- TODO obtain portnumber
 
-    let initMessage = makeInit (fromIntegral myVT) myPort
+    let initMessage = makeInit (fromIntegral myVT) $ fromIntegral myPort
     let myAddr = sockAddr (address stack, fromIntegral myPort)
-    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar myAddr myPort
+    let socket = makeConnectionSocket (fromIntegral myVT) associationStateVar myAddr (fromIntegral myPort)
     registerSocket stack myAddr socket
     socketSendMessage socket (peerAddr) initMessage
     return socket
@@ -196,7 +196,7 @@ registerSocket stack addr socket =
 
 socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
 socketAcceptMessage socket address message = do
-    --putStrLn $ "AcceptMessage: " ++ show message
+    (eventhandler socket) (OtherEvent message)
     -- Drop packet if verifyChecksum fails
     when (verifyChecksum message) $ do
         let tag = verificationTag $ header message
@@ -209,7 +209,6 @@ socketAcceptMessage socket address message = do
                         | otherwise = allChunks
                 when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket address message
                 unless (toProcess == []) $ do
-                    (eventhandler socket) (Event message)
                     maybeAssociation <- getAssociation socket tag
                     case maybeAssociation of
                         Just association  ->
@@ -244,7 +243,6 @@ handleInitAck socket association initAck = do
     registerSocket (stack socket) (socketAddress socket) newSocket
     let cookieEcho = makeCookieEcho newAssociation initAck
     let peerAddr = peerAddress socket
-    -- putStrLn $ show initAck
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
     swapMVar (associationState association) COOKIEECHOED
     return ()
@@ -265,11 +263,11 @@ makeCookieEcho association init =
 
 handleCookieAck :: Socket -> Association -> CookieAck -> IO()
 handleCookieAck socket association initAck = do
-    putStrLn "cookieAck"
+    (eventhandler socket) $ Established association
 
 handleShutdown :: Socket -> Association -> Shutdown -> IO()
 handleShutdown socket association chunk = do
-    putStrLn "handleShutdown"
+    (eventhandler socket) $ Closed association
 
 handlePayload :: Socket -> Association -> Payload -> IO()
 handlePayload socket association chunk = do 
@@ -281,14 +279,12 @@ handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     myVT <- randomIO :: IO Int
     myTSN <- randomIO :: IO Int
-    --putStrLn "Handling init"
     let responseMessage = makeInitResponse address message secret time myVT myTSN
-    (eventhandler socket) (Event message) -- TODO trigger handleInit event
     socketSendMessage socket (address, portnum) responseMessage
     return ()
   where
     secret = secretKey socket
-    portnum = fromIntegral $ (destinationPortNumber.header) message
+    portnum = fromIntegral $ (sourcePortNumber.header) message
 
 makeInitResponse address message secret time myVT myTSN =
     --trace ("Sending Cookie: " ++ (show signedCookie)) $
@@ -329,7 +325,7 @@ makeInitResponse address message secret time myVT myTSN =
 
 socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO(Int)
 socketSendMessage socket address message = do
-    --putStrLn $ "SendMessage: " ++ show message
+    --putStrLn $ "SendMessage: " ++ (show message) ++ "To: " ++ (show address)
     NSB.sendTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
@@ -342,6 +338,7 @@ handleCookieEcho socket@ListenSocket{} addr message = do
         association' <- liftM association (newMVar ESTABLISHED)
         let newAssocs =  Map.insert myVT association' assocs
         putMVar (associations socket) newAssocs
+        (eventhandler socket) $ Established association'
         socketSendMessage socket peerAddr $ cookieAckMessage association'
         return ()
   where
