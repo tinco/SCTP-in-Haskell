@@ -28,6 +28,41 @@ makeHeader association check = CommonHeader {
     checksum = check
 }
 
+makeInitMessage myVT myPort peerAddr =
+    Message header [toChunk init]
+  where
+    init = Init {
+        initType = initChunkType,
+        initLength = fromIntegral initFixedLength,
+        initiateTag = myVT,
+        advertisedReceiverWindowCredit = 0,
+        numberOfOutboundStreams = 1,
+        numberOfInboundStreams = 0,
+        initialTSN  = myVT,
+        parameters = []
+    }
+    header = CommonHeader myPort (fromIntegral.portNumber $ peerAddr)  0 0
+
+makeAssociation myVT myPort peerAddr =
+    MkAssociation {
+        associationPeerVT = 0,
+        associationVT = myVT,
+        associationState = COOKIEWAIT,
+        associationPort = myPort,
+        associationPeerAddress = peerAddr
+    }
+
+makeConnectionSocket stack myVT association myAddr eventhandler peerAddr =  
+    ConnectSocket {
+        association = association,
+        socketVerificationTag = myVT,
+        socketState = CONNECTING,
+        eventhandler = eventhandler,
+        stack = stack,
+        peerAddress = peerAddr,
+        socketAddress = myAddr
+    }
+
 makeCookieEcho association init =
     Message (makeHeader association check) [toChunk echo]
   where

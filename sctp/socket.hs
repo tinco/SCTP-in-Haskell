@@ -61,58 +61,24 @@ listen stack sockaddr eventhandler = do
 
 {- Connect -}
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
-connect stack sockaddr eventhandler = do
+connect stack peerAddr eventhandler = do
     keyValues <- replicateM 4 (randomIO :: IO(Int))
-    myVT <- randomIO :: IO Int
-    myPort <- do 
+    myVT <- liftM fromIntegral (randomIO :: IO Int)
+    myPort <- liftM fromIntegral $ do 
         let portnum = testUdpPort + 1
         return portnum -- TODO obtain portnumber
 
-    let initMessage = makeInit (fromIntegral myVT) $ fromIntegral myPort
     let myAddr = sockAddr (address stack, fromIntegral myPort)
-    let association = makeAssociation (fromIntegral myVT) $ fromIntegral myPort
-    associationMVar <- newMVar association
-    let socket = makeConnectionSocket (fromIntegral myVT) associationMVar myAddr
-    registerSocket stack myAddr socket
-    socketSendMessage socket (peerAddr) initMessage
-    return socket
-  where
-    peerAddr = (ipAddress sockaddr, portNumber sockaddr) 
-    makeInit myVT myPort = message
-      where
-        init = Init {
-            initType = initChunkType,
-            initLength = fromIntegral initFixedLength,
-            initiateTag = myVT,
-            advertisedReceiverWindowCredit = 0,
-            numberOfOutboundStreams = 1,
-            numberOfInboundStreams = 0,
-            initialTSN  = myVT,
-            parameters = []
-        }
 
-        header = CommonHeader myPort (fromIntegral.portNumber $ sockaddr)  0 0
-        message = Message header [toChunk init]
-    makeAssociation myVT myPort = association
-      where
-        association = MkAssociation {
-            associationPeerVT = 0,
-            associationVT = myVT,
-            associationState = COOKIEWAIT,
-            associationPort = myPort,
-            associationPeerAddress = sockaddr
-        }
-    makeConnectionSocket myVT association myAddr = socket
-      where
-        socket = ConnectSocket {
-          association = association,
-          socketVerificationTag = myVT,
-          socketState = CONNECTING,
-          eventhandler = eventhandler,
-          stack = stack,
-          peerAddress = sockaddr,
-          socketAddress = myAddr
-        }
+    let association = makeAssociation (myVT) myPort peerAddr
+    associationMVar <- newMVar association
+
+    let socket = makeConnectionSocket stack myVT associationMVar myAddr eventhandler peerAddr
+    registerSocket stack myAddr socket
+
+    let initMessage = makeInitMessage myVT myPort peerAddr
+    socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) initMessage
+    return socket
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =
