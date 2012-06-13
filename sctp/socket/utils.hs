@@ -109,4 +109,18 @@ makeInitResponse address message secret time myVT myTSN =
         parameters = [Parameter cookieType (fromIntegral cookieLength + fromIntegral parameterFixedLength) (serializeCookie signedCookie)]
     }
 
+validateMac socket addr message = (validMac, association)
+  where
+    cookieChunk = fromChunk $ head $ chunks message
+    (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
+    myVT = verificationTag $ header message
+    myAddress = address $ stack socket
+    myPortnum = destinationPortNumber $ header message
+    secret = secretKey $ socket
+    myMac = makeMac cookie (fromIntegral myVT) myAddress myPortnum secret
+    validMac = myMac == (mac cookie)
+    peerVT =  peerVerificationTag cookie
+    peerPort = sourcePortNumber $ header message
+    peerAddr = (addr, fromIntegral peerPort)
+    association = MkAssociation peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr)
 

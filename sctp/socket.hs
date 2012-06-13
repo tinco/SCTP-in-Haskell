@@ -166,27 +166,21 @@ socketSendMessage socket address message = do
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
+{- The Cookie Echo is sent by connecting party, when the listener receives it
+ - the cookie is verified, the connection association is registered and an
+ - acknowledgement is sent to the connecting party.
+ -}
 handleCookieEcho :: Socket -> IpAddress -> Message -> IO()
-handleCookieEcho socket@ConnectSocket{} addr message = return ()
-handleCookieEcho socket@ListenSocket{} addr message = do
+handleCookieEcho socket@ConnectSocket{} peerAddr message = return ()
+handleCookieEcho socket@ListenSocket{} peerAddr message = do
     when validMac $ do
         assocs <- takeMVar $ associations socket
-        let newAssocs =  Map.insert myVT association assocs
+        let newAssocs =  Map.insert (associationVT association) association assocs
         putMVar (associations socket) newAssocs
+        -- We've established our end!
         (eventhandler socket) $ Established association
-        socketSendMessage socket peerAddr $ cookieAckMessage
+        socketSendMessage socket (peerAddr, fromIntegral.sourcePortNumber.header$message) $ cookieAckMessage
         return ()
   where
-    cookieChunk = fromChunk $ head $ chunks message
-    (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
-    myVT = verificationTag $ header message
-    myAddress = address $ stack socket
-    myPortnum = destinationPortNumber $ header message
-    secret = secretKey $ socket
-    myMac = makeMac cookie (fromIntegral myVT) myAddress myPortnum secret
-    validMac = myMac == (mac cookie)
-    peerVT =  peerVerificationTag cookie
-    peerPort = sourcePortNumber $ header message
-    peerAddr = (addr, fromIntegral peerPort)
-    association = MkAssociation peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr)
+    (validMac, association) = validateMac socket peerAddr message -- TODO shouldn't we validate the peerAddr too?
     cookieAckMessage =  Message (makeHeader association 0) [toChunk CookieAck]
