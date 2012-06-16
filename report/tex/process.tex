@@ -1,4 +1,23 @@
 \chapter{Process}
-To explore different styles we have implemented the SCTP protocol\cite{_rfc_????} in Haskell and ... using different styles.
-
+\section{Approach}
+To explore different styles we have implemented the SCTP protocol\cite{_rfc_????} in Haskell using different styles.
+\section{Initial Implementation}
+%Architecture
+% -- why split I/O and pure
+% -- why eventhandler?
+% -- planning, type driven development
+%Hurdles:
+% -- eliminating message channels (aka why eventhandler)
+% -- Keeping state, eliminating mvars
+%Advantages:
+% -- End result seems readable, plain to see all I/O, I/O is all the observable behaviour.
+%Testing:
+% -- Using quickcheck
+% -- Testing the I/O
+% -- Debugging
+% Analysis:
+% -- where lies the complexity?
+% -- where is the boilerplate, what is hidden?
+% -- where are the bugs, missing features?
 Haskell performance \cite{epstein_haskell_????}
+
