@@ -47,7 +47,8 @@ data Association = MkAssociation {
     associationVT :: VerificationTag,
     associationState :: AssociationState,
     associationPort :: PortNum,
-    associationPeerAddress :: NS.SockAddr
+    associationPeerAddress :: NS.SockAddr,
+    associationSocket :: Socket
 }
 
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |

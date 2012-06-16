@@ -5,6 +5,7 @@ import qualified Network.Socket.ByteString as NSB
 import qualified Network.Socket.ByteString.Lazy as NSBL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import Data.ByteString.UTF8 (fromString, toString)
 import qualified Network.BSD as NBSD
 import Control.Monad
 import Control.Concurrent
@@ -70,15 +71,36 @@ connect stack peerAddr eventhandler = do
 
     let myAddr = sockAddr (address stack, fromIntegral myPort)
 
-    let association = makeAssociation (myVT) myPort peerAddr
-    associationMVar <- newMVar association
+    associationMVar <- newEmptyMVar
 
     let socket = makeConnectionSocket stack myVT associationMVar myAddr eventhandler peerAddr
+    let association' = makeAssociation socket (myVT) myPort peerAddr
+    putMVar (association socket) association'
     registerSocket stack myAddr socket
 
     let initMessage = makeInitMessage myVT myPort peerAddr
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) initMessage
     return socket
+
+{- Send a string -}
+sendString :: Association -> String -> IO()
+sendString association string =
+    sendData association $ fromString string
+    
+{- Sends some bytes -}
+sendData :: Association -> BS.ByteString -> IO()
+sendData association bytes = do
+    socketSendMessage socket (ipAddress peerAddress, portNumber peerAddress) message
+    return ()
+  where
+    message = Message header [toChunk payload]
+    header = makeHeader association 0
+    payload = Payload 0 True True True length tsn 0 0 0 $ BL.fromChunks [padded_bytes]
+    length = fixedPayloadLength + (fromIntegral $ BS.length bytes)
+    padded_bytes = payloadPad bytes
+    peerAddress = associationPeerAddress association
+    socket = associationSocket association
+    tsn = 0
 
 registerSocket :: SCTP -> NS.SockAddr -> Socket -> IO()
 registerSocket stack addr socket =

@@ -5,5 +5,5 @@ Author: Tinco Andringa
 Synopsis: A haskell implementation of the SCTP protocol
 Build-Type: Simple
 
-Build-Depends: base, binary, binary-strict, bytestring, network, random, containers, time, Crypto >= 4.2.0
+Build-Depends: base, binary, binary-strict, bytestring, network, random, containers, time, Crypto >= 4.2.0, utf8-string
 Exposed-Modules: SCTP.Types, SCTP.Socket, SCTP.Utils

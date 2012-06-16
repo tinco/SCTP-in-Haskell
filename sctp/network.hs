@@ -19,5 +19,8 @@ main = do
   where
     listenHandler (Established a) = putStrLn "Listener established"
     listenHandler (OtherEvent m) = return ()
-    connectHandler (Established a) = putStrLn "Connector established"
-    connectHandler (OtherEvent m) = return () --putStrLn $ show m
+    connectHandler (Established a) = do
+        putStrLn "Connector established"
+        sendString a "Hello World!"
+    connectHandler (OtherEvent m) = do
+        return () --putStrLn $ show m

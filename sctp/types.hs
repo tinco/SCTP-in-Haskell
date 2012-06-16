@@ -145,6 +145,7 @@ deserializeChunk = runGet $ do
    \                                                               \
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -}
+--TODO fix padding
 data Payload = Payload {
   reserved :: Word8, -- width is 5
   u :: Bool, b :: Bool, e :: Bool,
@@ -155,6 +156,14 @@ data Payload = Payload {
   payloadProtocolIdentifier :: Word32,
   userData :: BL.ByteString
 } deriving (Show, Eq)
+
+fixedPayloadLength = 4 * 4 :: Word16
+
+payloadPad :: BS.ByteString -> BS.ByteString
+payloadPad userData = BS.concat [userData, (BS.pack $ take (fromIntegral $ newLength - oldLength) $ repeat 0)]
+  where 
+    newLength = (oldLength  + 3) `div` 4 * 4
+    oldLength = BS.length userData
 
 payloadChunkType = 0 :: Word8
 instance ChunkType Payload where
