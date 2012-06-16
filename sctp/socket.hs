@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module SCTP.Socket where
 import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
@@ -136,37 +137,35 @@ socketAcceptMessage socket address message = do
         return $ Map.lookup tag assocs
 
 handleChunk socket association chunk
-    | t == initAckChunkType = handleInitAck socket association $ fromChunk chunk
-    | t == payloadChunkType = handlePayload socket association $ fromChunk chunk
-    | t == shutdownChunkType = handleShutdown socket association $ fromChunk chunk
-    | t == cookieAckChunkType = handleCookieAck socket association $ fromChunk chunk
+    | t == initAckChunkType = handleInitAck association $ fromChunk chunk
+    | t == payloadChunkType = handlePayload association $ fromChunk chunk
+    | t == shutdownChunkType = handleShutdown association $ fromChunk chunk
+    | t == cookieAckChunkType = handleCookieAck association $ fromChunk chunk
     | otherwise = return ()--putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
 
-handleInitAck :: Socket -> Association -> Init -> IO()
-handleInitAck socket assoc initAck = do
-    --registerSocket (stack socket) (socketAddress socket) newSocket
-    let cookieEcho = makeCookieEcho newAssociation initAck
-    let peerAddr = peerAddress socket
-    socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) cookieEcho
-    swapMVar (association socket) newAssociation
+handleInitAck :: Association -> Init -> IO()
+handleInitAck a@Association{..} initAck = do
+    socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) cookieEcho
+    swapMVar (association associationSocket) newAssociation
     return ()
   where
     peerVT = initiateTag initAck
-    newAssociation = assoc { associationPeerVT = peerVT, associationState = COOKIEECHOED}
+    newAssociation = a { associationPeerVT = peerVT, associationState = COOKIEECHOED}
+    cookieEcho = makeCookieEcho newAssociation initAck
 
-handleCookieAck :: Socket -> Association -> CookieAck -> IO()
-handleCookieAck socket association initAck = do
-    (eventhandler socket) $ Established association
+handleCookieAck :: Association -> CookieAck -> IO()
+handleCookieAck association@Association{..} initAck = do
+    (eventhandler associationSocket) $ Established association
 
-handleShutdown :: Socket -> Association -> Shutdown -> IO()
-handleShutdown socket association chunk = do
-    (eventhandler socket) $ Closed association
+handleShutdown :: Association -> Shutdown -> IO()
+handleShutdown association@Association{..} chunk = do
+    (eventhandler associationSocket) $ Closed association
 
-handlePayload :: Socket -> Association -> Payload -> IO()
-handlePayload socket association chunk = do 
-    putStrLn "handlePayload"
+handlePayload :: Association -> Payload -> IO()
+handlePayload association@Association{..} chunk = do 
+    (eventhandler associationSocket) $ Data association
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening

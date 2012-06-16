@@ -19,6 +19,7 @@ main = do
   where
     listenHandler (Established a) = putStrLn "Listener established"
     listenHandler (OtherEvent m) = return ()
+    listenHandler (Data a) = putStrLn "got data!"
     connectHandler (Established a) = do
         putStrLn "Connector established"
         sendString a "Hello World!"

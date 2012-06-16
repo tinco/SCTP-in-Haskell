@@ -44,7 +44,7 @@ makeInitMessage myVT myPort peerAddr =
     header = CommonHeader myPort (fromIntegral.portNumber $ peerAddr)  0 0
 
 makeAssociation socket myVT myPort peerAddr =
-    MkAssociation {
+    Association {
         associationPeerVT = 0,
         associationVT = myVT,
         associationState = COOKIEWAIT,
@@ -123,5 +123,5 @@ validateMac socket addr message = (validMac, association)
     peerVT =  peerVerificationTag cookie
     peerPort = sourcePortNumber $ header message
     peerAddr = (addr, fromIntegral peerPort)
-    association = MkAssociation peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr) socket
+    association = Association peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr) socket
 

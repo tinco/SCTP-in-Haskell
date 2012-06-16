@@ -37,12 +37,13 @@ instance Show Socket where
 
 data Event = OtherEvent Message
            | Established Association
+           | Data Association
            | Closed Association
 
 data SocketState = CONNECTING | CONNECTED | CLOSED
 
 -- Transmission Control Block
-data Association = MkAssociation {
+data Association = Association {
     associationPeerVT :: VerificationTag,
     associationVT :: VerificationTag,
     associationState :: AssociationState,
