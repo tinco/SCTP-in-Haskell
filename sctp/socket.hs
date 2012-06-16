@@ -71,7 +71,6 @@ connect stack peerAddr eventhandler = do
         return portnum -- TODO obtain portnumber
 
     let myAddr = sockAddr (address stack, fromIntegral myPort)
-
     associationMVar <- newEmptyMVar
 
     let socket = makeConnectionSocket stack myVT associationMVar myAddr eventhandler peerAddr
@@ -165,7 +164,12 @@ handleShutdown association@Association{..} chunk = do
 
 handlePayload :: Association -> Payload -> IO()
 handlePayload association@Association{..} chunk = do 
+    acknowledge association payload
     (eventhandler associationSocket) $ Data association
+
+acknowledge :: Association -> Payload -> IO()
+acknowledge association payload =
+    undefined
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening

@@ -165,14 +165,19 @@ payloadPad userData = BS.concat [userData, (BS.pack $ take (fromIntegral $ newLe
     newLength = (oldLength  + 3) `div` 4 * 4
     oldLength = BS.length userData
 
+payloadPadLength :: Num -> Num
+payloadPadLength length = length - $ (length + 3) `div` 4 * 4
+
 payloadChunkType = 0 :: Word8
 instance ChunkType Payload where
   fromChunk c = Payload reserved u b e dataLength tsn streamIdentifier
                   streamSequenceNumber payloadProtocolIdentifier userData
-                where
-                  (reserved, u, b, e) = parseFlags (flags c)
-                  dataLength = chunkLength c - 16 -- userData is length - 16 long
-                  (tsn, streamIdentifier, streamSequenceNumber, payloadProtocolIdentifier, userData) = deserializePayload (fromIntegral dataLength) (value c)
+  where
+    (reserved, u, b, e) = parseFlags (flags c)
+    dataLength = chunkLength c - fixedPayloadLength
+    (tsn, streamIdentifier, streamSequenceNumber,
+     payloadProtocolIdentifier, userData) =
+	deserializePayload (fromIntegral dataLength) (value c)
 
   toChunk h =
       Chunk chunkType flags cLength value
@@ -207,6 +212,7 @@ deserializePayload length = runGet $ do
   streamSequenceNumber <- getWord16be
   payloadProtocolIdentifier <- getWord32be
   userData <- getLazyByteString length
+  getLazyByteString $ paddedDataLength length -- padding
   return (tsn, streamIdentifier, streamSequenceNumber, payloadProtocolIdentifier, userData)
 
 {-

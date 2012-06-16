@@ -23,5 +23,6 @@ main = do
     connectHandler (Established a) = do
         putStrLn "Connector established"
         sendString a "Hello World!"
+    connectHandler (Data a) = putStrLn "got data!"
     connectHandler (OtherEvent m) = do
         return () --putStrLn $ show m
