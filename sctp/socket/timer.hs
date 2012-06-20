@@ -4,14 +4,15 @@ import Control.Concurrent
 import Control.Concurrent.MVar
 import System.CPUTime
 
-type Timer = MVar [(Int,TimerEntry)]
+type Timer k = MVar [(k,TimerEntry)]
+
 data TimerEntry = TimerEntry {
   timerTime :: Integer,
   timerCallback :: IO()
 }
 
 -- startTimer runs a loop in which it checks its timers list every 'interval' milliseconds
-startTimer :: Int -> IO(Timer)
+startTimer :: Int -> IO(Timer k)
 startTimer interval = do
     mvar <- newMVar []
     forkIO $ forever $ do
@@ -33,7 +34,7 @@ startTimer interval = do
 toMilliseconds time = time `div` (10^9)
             
 -- registerTimer adds a callback to the timers list, the callback will be called after dt milliseconds
-registerTimer :: Timer -> Int -> IO() -> Integer -> IO()
+registerTimer :: Timer k -> k -> IO() -> Integer -> IO()
 registerTimer timerVar id callback dt = do
     timers <- takeMVar timerVar
     time' <- getCPUTime
@@ -43,7 +44,7 @@ registerTimer timerVar id callback dt = do
     putMVar timerVar timers'
 
 -- execution of the given timer will be cancelled
-cancelTimer :: Timer -> Int -> IO()
+cancelTimer :: Eq k => Timer k -> k -> IO()
 cancelTimer timerVar id = do
     timers <- takeMVar timerVar
     let timers' = filter (\ (id',_) -> id == id') timers
