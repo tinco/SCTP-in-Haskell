@@ -47,7 +47,7 @@ registerTimer timerVar id callback dt = do
 cancelTimer :: Eq k => Timer k -> k -> IO()
 cancelTimer timerVar id = do
     timers <- takeMVar timerVar
-    let timers' = filter (\ (id',_) -> id == id') timers
+    let timers' = filter (\ (id',_) -> id /= id') timers
     putMVar timerVar timers'
 
 {- What we want to do is:
