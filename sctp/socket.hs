@@ -140,6 +140,7 @@ handleChunk socket association chunk
     | t == payloadChunkType = handlePayload association $ fromChunk chunk
     | t == shutdownChunkType = handleShutdown association $ fromChunk chunk
     | t == cookieAckChunkType = handleCookieAck association $ fromChunk chunk
+    | t == selectiveAckChunkType = handleSelectiveAck association $ fromChunk chunk
     | otherwise = return ()--putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
@@ -163,13 +164,21 @@ handleShutdown association@Association{..} chunk = do
     (eventhandler associationSocket) $ Closed association
 
 handlePayload :: Association -> Payload -> IO()
-handlePayload association@Association{..} chunk = do 
+handlePayload association@Association{..} payload = do 
     acknowledge association payload
-    (eventhandler associationSocket) $ Data association
+    (eventhandler associationSocket) $ Data association $ userData payload
 
 acknowledge :: Association -> Payload -> IO()
-acknowledge association payload =
-    undefined
+acknowledge association@Association{..} Payload{..} = do
+    socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) message
+    return ()
+  where
+    message = Message (makeHeader association 0) [toChunk sack]
+    sack = SelectiveAck tsn 1 [] []
+
+handleSelectiveAck :: Association -> SelectiveAck -> IO()
+handleSelectiveAck association@Association{..} SelectiveAck{..} = do 
+    (eventhandler associationSocket) $ Sent association $ cumulativeTSNAck
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening

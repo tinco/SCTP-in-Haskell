@@ -6,6 +6,8 @@ import qualified Network.BSD as NBSD
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import Data.Word
 
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
@@ -37,8 +39,9 @@ instance Show Socket where
 
 data Event = OtherEvent Message
            | Established Association
-           | Data Association
+           | Data Association BL.ByteString
            | Closed Association
+           | Sent Association Word32
 
 data SocketState = CONNECTING | CONNECTED | CLOSED
 

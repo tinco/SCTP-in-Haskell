@@ -1,6 +1,7 @@
 import SCTP.Socket
 import SCTP.Socket.Types
 import SCTP.Socket.Utils
+import Data.ByteString.Lazy.UTF8 (fromString, toString)
 
 main :: IO ()
 main = do
@@ -19,10 +20,12 @@ main = do
   where
     listenHandler (Established a) = putStrLn "Listener established"
     listenHandler (OtherEvent m) = return ()
-    listenHandler (Data a) = putStrLn "got data!"
+    listenHandler (Data a d) = putStrLn $ "got data: " ++ toString d
     connectHandler (Established a) = do
         putStrLn "Connector established"
         sendString a "Hello World!"
-    connectHandler (Data a) = putStrLn "got data!"
+    connectHandler (Sent a tsn) = do
+        putStrLn "Got acknowledgement"
+    connectHandler (Data a d) = putStrLn $ "got data: " ++ toString d
     connectHandler (OtherEvent m) = do
         return () --putStrLn $ show m

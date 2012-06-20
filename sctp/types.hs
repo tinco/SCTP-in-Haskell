@@ -1,5 +1,5 @@
 module SCTP.Types where
-import Data.ByteString hiding (map, foldl, take)
+import Data.ByteString hiding (map, foldl, take, length)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
 import Data.Binary.Put
@@ -10,6 +10,7 @@ import Data.Word
 import Data.Bits
 import Data.HMAC
 import Debug.Trace
+import Control.Monad
 
 data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
     deriving (Show, Eq, Ord)
@@ -145,7 +146,6 @@ deserializeChunk = runGet $ do
    \                                                               \
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -}
---TODO fix padding
 data Payload = Payload {
   reserved :: Word8, -- width is 5
   u :: Bool, b :: Bool, e :: Bool,
@@ -165,23 +165,23 @@ payloadPad userData = BS.concat [userData, (BS.pack $ take (fromIntegral $ newLe
     newLength = (oldLength  + 3) `div` 4 * 4
     oldLength = BS.length userData
 
-payloadPadLength :: Num -> Num
-payloadPadLength length = length - $ (length + 3) `div` 4 * 4
+payloadPadLength :: Int -> Int
+payloadPadLength length = length - (length + 3) `div` 4 * 4
 
 payloadChunkType = 0 :: Word8
 instance ChunkType Payload where
   fromChunk c = Payload reserved u b e dataLength tsn streamIdentifier
                   streamSequenceNumber payloadProtocolIdentifier userData
-  where
-    (reserved, u, b, e) = parseFlags (flags c)
-    dataLength = chunkLength c - fixedPayloadLength
-    (tsn, streamIdentifier, streamSequenceNumber,
-     payloadProtocolIdentifier, userData) =
-	deserializePayload (fromIntegral dataLength) (value c)
+    where
+      (reserved, u, b, e) = parseFlags (flags c)
+      dataLength = chunkLength c - fixedPayloadLength
+      (tsn, streamIdentifier, streamSequenceNumber,
+       payloadProtocolIdentifier, userData) = 
+          deserializePayload (fromIntegral dataLength) (value c)
 
   toChunk h =
       Chunk chunkType flags cLength value
-      where
+    where
         chunkType = 0
         flags = BL.head . BP.runBitPut $ do
           BP.putNBits 5 (reserved h)
@@ -211,9 +211,85 @@ deserializePayload length = runGet $ do
   streamIdentifier <- getWord16be
   streamSequenceNumber <- getWord16be
   payloadProtocolIdentifier <- getWord32be
-  userData <- getLazyByteString length
-  getLazyByteString $ paddedDataLength length -- padding
+  userData <- getLazyByteString $ fromIntegral length
+  getLazyByteString $ fromIntegral $ length + payloadPadLength length -- padding
   return (tsn, streamIdentifier, streamSequenceNumber, payloadProtocolIdentifier, userData)
+
+{-
+                        Selective ACK chunk format
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |   Type = 3    |Chunk  Flags   |      Chunk Length             |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |                      Cumulative TSN Ack                       |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |          Advertised Receiver Window Credit (a_rwnd)           |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      | Number of Gap Ack Blocks = N  |  Number of Duplicate TSNs = X |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |  Gap Ack Block #1 Start       |   Gap Ack Block #1 End        |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      /                                                               /
+      \                              ...                              \
+      /                                                               /
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |   Gap Ack Block #N Start      |  Gap Ack Block #N End         |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |                       Duplicate TSN 1                         |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      /                                                               /
+      \                              ...                              \
+      /                                                               /
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |                       Duplicate TSN X                         |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+-}
+data SelectiveAck = SelectiveAck {
+  cumulativeTSNAck :: Word32,
+  advertisedReceiverWindowCredit' :: Word32,
+  gapAckBlocks :: [(Word16,Word16)],
+  duplicateTSNs :: [Word32]
+} deriving (Show, Eq)
+
+fixedSelectiveAckLength = 4 * 4 :: Word16
+
+selectiveAckChunkType = 3 :: Word8
+instance ChunkType SelectiveAck where
+  fromChunk c = SelectiveAck tsn a_rwnd gaps dups
+    where
+      deserializeSelectiveAck = runGet $ do
+        tsn <- getWord32be
+        a_rwnd <- getWord32be
+        numGaps <- getWord16be
+        numDups <- getWord16be
+        let parseGap = do
+            gapStart <- getWord16be
+            gapEnd <- getWord16be
+            return (gapStart, gapEnd)
+        gaps <- replicateM (fromIntegral numGaps) parseGap
+        dups <- replicateM (fromIntegral numDups) getWord32be
+        return (tsn, a_rwnd, gaps, dups)
+      (tsn,a_rwnd,gaps,dups) = deserializeSelectiveAck (value c)
+
+  toChunk s =
+      Chunk selectiveAckChunkType 0 cLength value
+      where
+        cLength = fixedSelectiveAckLength + numDups + numGaps
+        numDups = fromIntegral $ length $ duplicateTSNs s
+        numGaps = fromIntegral $ length $ gapAckBlocks s
+        value = runPut $ do
+          putWord32be $ cumulativeTSNAck s
+          putWord32be $ advertisedReceiverWindowCredit' s
+          putWord16be $ fromIntegral numGaps
+          putWord16be $ fromIntegral numDups
+          mapM_ (\(b,e) -> do
+              putWord16be b
+              putWord16be e
+            ) $ gapAckBlocks s
+          mapM_ putWord32be $ duplicateTSNs s
+
+serializeSelectiveAck h = (serializeChunk . toChunk) h
 
 {-
                               Init Chunk Format
@@ -330,17 +406,17 @@ deserializeParameters bytes = parameter : other_parameters
         other_parameters = if BL.null rest then [] else deserializeParameters rest
 
 {-
-	State Cookie
+  State Cookie
       Parameter Type Value: 7
       Parameter Length:  variable size, depending on Size of Cookie
       Parameter Value:
 
-	I'm not sure what all belongs in the state cookie
+      I'm not sure what all belongs in the state cookie
     I'm guessing:
       - Cookie Creation Time (for stale checking)
       - Peer verification tag
       - Advertised window credit
-      - Number of outbound streams	
+      - Number of outbound streams
       - Maximum inbound streams
       - Initial TSN
       - MAC (HMAC) over:
@@ -349,7 +425,7 @@ deserializeParameters bytes = parameter : other_parameters
     If we were to support multihoming the cookie would have to include every
     address supplied with the Init chunk. All these addresses would
     also need to be MAC'ed. This design makes no sense.
-	We also don't support fast restarting (with tie-tags)
+    We also don't support fast restarting (with tie-tags)
 -}
 
 cookieType = 7 :: Word16
