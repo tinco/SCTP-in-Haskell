@@ -15,6 +15,30 @@ import Control.Monad
 data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
     deriving (Show, Eq, Ord)
 
+{-
+   RTO.Initial              - 3  seconds
+   RTO.Min                  - 1  second
+   RTO.Max                 -  60 seconds
+   RTO.Alpha                - 1/8
+   RTO.Beta                 - 1/4
+   Valid.Cookie.Life        - 60  seconds
+   Association.Max.Retrans  - 10 attempts
+   Path.Max.Retrans         - 5  attempts (per destination address)
+   Max.Init.Retransmits     - 8  attempts
+   HB.interval              - 30 seconds
+-}
+
+defaultRTOInitial = 3000
+defaultRTOMin = 1000
+defaultRTOMax = 60000
+defaultRTOAlpha = 125
+defaultRTOBeta = 250
+defaultValidCookieLife = 60000
+defaultAssociationMaxRetrans = 10
+defaultPathMaxRetrans = 5
+defaultMaxInitRetransmits = 8
+defaultHBInterval = 30
+
 -- Every SCTP message follows the following structure
 data Message = Message {
     header :: CommonHeader,
