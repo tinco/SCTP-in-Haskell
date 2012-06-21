@@ -15,6 +15,7 @@ import SCTP.Types
 import SCTP.Utils
 import SCTP.Socket.Types
 import SCTP.Socket.Utils
+import SCTP.Socket.Timer
 import Data.Word
 import qualified Data.Map as Map
 import Control.Concurrent.MVar
@@ -72,15 +73,37 @@ connect stack peerAddr eventhandler = do
 
     let myAddr = sockAddr (address stack, fromIntegral myPort)
     associationMVar <- newEmptyMVar
+    initTimer <- startTimer 10
 
     let socket = makeConnectionSocket stack myVT associationMVar myAddr eventhandler peerAddr
-    let association' = makeAssociation socket (myVT) myPort peerAddr
+    let association' = makeAssociation socket (myVT) myPort peerAddr initTimer
     putMVar (association socket) association'
     registerSocket stack myAddr socket
 
     let initMessage = makeInitMessage myVT myPort peerAddr
     socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) initMessage
+    registerTimer initTimer 0 (initRetransmit association' initMessage 0) (associationTimeOut association')
     return socket
+
+{- Retransmit the init message -}
+initRetransmit association message attempt = do
+    if attempt < defaultMaxInitRetransmits
+      then do
+          socketSendMessage socket (ipAddress peerAddr, portNumber peerAddr) message
+          registerTimer timer 0 (initRetransmit association message $ attempt+1) timeOut
+          return ()
+      else do
+          closeConnection association
+          (eventhandler socket) $ Error "Could not connect."
+          return ()
+  where
+    peerAddr = associationPeerAddress association
+    socket = associationSocket association
+    timer = associationTimer association
+    timeOut = associationTimeOut association
+
+{- Close the connection -}
+closeConnection association = return ()
 
 {- Send a string -}
 sendString :: Association -> String -> IO()
@@ -122,63 +145,69 @@ socketAcceptMessage socket address message = do
                         | otherwise = allChunks
                 when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket address message
                 unless (toProcess == []) $ do
-                    maybeAssociation <- getAssociation socket tag
-                    case maybeAssociation of
-                        Just association  ->
-                            mapM_ (handleChunk socket association) toProcess
-                        Nothing -> return()
+                    withAssociation socket tag toProcess
   where
-    getAssociation ConnectSocket{} _ = do
-        assoc <- readMVar $ association socket
-        return $ Just assoc
-    getAssociation ListenSocket{} tag = do
-        assocs <- readMVar (associations socket)
-        return $ Map.lookup tag assocs
+    processChunks association toProcess = foldM (handleChunk socket) association toProcess
+    withAssociation ConnectSocket{} _ chunks = do
+        assoc <- takeMVar $ association socket
+        assoc' <- processChunks assoc chunks
+        putMVar (association socket) assoc'
+    withAssociation ListenSocket{} tag chunks = do
+        assocs <- takeMVar (associations socket)
+        case Map.lookup tag assocs of
+            Just assoc -> do
+                assoc' <- processChunks assoc chunks
+                putMVar (associations socket) (Map.insert tag assoc' assocs)
+            Nothing -> putMVar (associations socket) assocs
 
+handleInitAck :: Association -> Init -> IO(Association)
+handleInitAck a@Association{..} initAck = do
+    socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) cookieEcho
+    return newAssociation
+  where
+    peerVT = initiateTag initAck
+    newAssociation = a { associationPeerVT = peerVT, associationState = COOKIEECHOED}
+    cookieEcho = makeCookieEcho newAssociation initAck
+
+handleChunk :: Socket -> Association -> Chunk -> IO(Association)
 handleChunk socket association chunk
     | t == initAckChunkType = handleInitAck association $ fromChunk chunk
     | t == payloadChunkType = handlePayload association $ fromChunk chunk
     | t == shutdownChunkType = handleShutdown association $ fromChunk chunk
     | t == cookieAckChunkType = handleCookieAck association $ fromChunk chunk
     | t == selectiveAckChunkType = handleSelectiveAck association $ fromChunk chunk
-    | otherwise = return ()--putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
+    | otherwise = return association --putStrLn $ "Got chunk:" ++ show chunk -- return() -- exception?
   where
     t = chunkType chunk
 
-handleInitAck :: Association -> Init -> IO()
-handleInitAck a@Association{..} initAck = do
-    socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) cookieEcho
-    swapMVar (association associationSocket) newAssociation
-    return ()
-  where
-    peerVT = initiateTag initAck
-    newAssociation = a { associationPeerVT = peerVT, associationState = COOKIEECHOED}
-    cookieEcho = makeCookieEcho newAssociation initAck
-
-handleCookieAck :: Association -> CookieAck -> IO()
+handleCookieAck :: Association -> CookieAck -> IO(Association)
 handleCookieAck association@Association{..} initAck = do
     (eventhandler associationSocket) $ Established association
+    return association
 
-handleShutdown :: Association -> Shutdown -> IO()
+handleShutdown :: Association -> Shutdown -> IO(Association)
 handleShutdown association@Association{..} chunk = do
     (eventhandler associationSocket) $ Closed association
+    return association
 
-handlePayload :: Association -> Payload -> IO()
+handlePayload :: Association -> Payload -> IO(Association)
 handlePayload association@Association{..} payload = do 
     acknowledge association payload
     (eventhandler associationSocket) $ Data association $ userData payload
+    return association
 
-acknowledge :: Association -> Payload -> IO()
+acknowledge :: Association -> Payload -> IO(Association)
 acknowledge association@Association{..} Payload{..} = do
     socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) message
-    return ()
+    return association
   where
     message = Message (makeHeader association 0) [toChunk sack]
     sack = SelectiveAck tsn 1 [] []
 
-handleSelectiveAck :: Association -> SelectiveAck -> IO()
+handleSelectiveAck :: Association -> SelectiveAck -> IO(Association)
 handleSelectiveAck association@Association{..} SelectiveAck{..} = do 
     (eventhandler associationSocket) $ Sent association $ cumulativeTSNAck
+    return association
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
 handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening
@@ -209,12 +238,14 @@ handleCookieEcho socket@ConnectSocket{} peerAddr message = return ()
 handleCookieEcho socket@ListenSocket{} peerAddr message = do
     when validMac $ do
         assocs <- takeMVar $ associations socket
+        timer <- startTimer 10
+        let association = almostAssociation timer
         let newAssocs =  Map.insert (associationVT association) association assocs
         putMVar (associations socket) newAssocs
         -- We've established our end!
         (eventhandler socket) $ Established association
-        socketSendMessage socket (peerAddr, fromIntegral.sourcePortNumber.header$message) $ cookieAckMessage
+        socketSendMessage socket (peerAddr, fromIntegral.sourcePortNumber.header$message) $ cookieAckMessage association
         return ()
   where
-    (validMac, association) = validateMac socket peerAddr message -- TODO shouldn't we validate the peerAddr too?
-    cookieAckMessage =  Message (makeHeader association 0) [toChunk CookieAck]
+    (validMac, almostAssociation) = validateMac socket peerAddr message
+    cookieAckMessage association =  Message (makeHeader association 0) [toChunk CookieAck]

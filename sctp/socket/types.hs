@@ -1,5 +1,6 @@
 module SCTP.Socket.Types where
 import SCTP.Types
+import SCTP.Socket.Timer
 import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
 import qualified Network.BSD as NBSD
@@ -42,6 +43,7 @@ data Event = OtherEvent Message
            | Data Association BL.ByteString
            | Closed Association
            | Sent Association Word32
+           | Error String
 
 data SocketState = CONNECTING | CONNECTED | CLOSED
 
@@ -52,7 +54,9 @@ data Association = Association {
     associationState :: AssociationState,
     associationPort :: PortNum,
     associationPeerAddress :: NS.SockAddr,
-    associationSocket :: Socket
+    associationSocket :: Socket,
+    associationTimeOut :: Integer, -- in milliseconds
+    associationTimer :: Timer Word32
 }
 
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
@@ -71,4 +75,3 @@ portNumber (NS.SockAddrInet6 port flow host scope) = port
 sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
 sockAddr (IPv4 host, port) = NS.SockAddrInet port host
 sockAddr (IPv6 host, port) = NS.SockAddrInet6 port 0 host 0
-

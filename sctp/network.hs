@@ -21,6 +21,7 @@ main = do
     listenHandler (Established a) = putStrLn "Listener established"
     listenHandler (OtherEvent m) = return ()
     listenHandler (Data a d) = putStrLn $ "got data: " ++ toString d
+    connectHandler (Error m) = putStrLn $ "Error: "++ m
     connectHandler (Established a) = do
         putStrLn "Connector established"
         sendString a "Hello World!"

@@ -43,14 +43,16 @@ makeInitMessage myVT myPort peerAddr =
     }
     header = CommonHeader myPort (fromIntegral.portNumber $ peerAddr)  0 0
 
-makeAssociation socket myVT myPort peerAddr =
+makeAssociation socket myVT myPort peerAddr timer =
     Association {
         associationPeerVT = 0,
         associationVT = myVT,
         associationState = COOKIEWAIT,
         associationPort = myPort,
         associationPeerAddress = peerAddr,
-        associationSocket = socket
+        associationSocket = socket,
+        associationTimeOut = defaultRTOInitial,
+        associationTimer = timer
     }
 
 makeConnectionSocket stack myVT association myAddr eventhandler peerAddr =  
@@ -110,7 +112,7 @@ makeInitResponse address message secret time myVT myTSN =
         parameters = [Parameter cookieType (fromIntegral cookieLength + fromIntegral parameterFixedLength) (serializeCookie signedCookie)]
     }
 
-validateMac socket addr message = (validMac, association)
+validateMac socket addr message = (validMac, almostAssociation)
   where
     cookieChunk = fromChunk $ head $ chunks message
     (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
@@ -123,5 +125,5 @@ validateMac socket addr message = (validMac, association)
     peerVT =  peerVerificationTag cookie
     peerPort = sourcePortNumber $ header message
     peerAddr = (addr, fromIntegral peerPort)
-    association = Association peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr) socket
+    almostAssociation = Association peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr) socket defaultRTOInitial
 
