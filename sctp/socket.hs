@@ -1,31 +1,28 @@
 {-# LANGUAGE RecordWildCards #-}
 module SCTP.Socket where
-import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
-import qualified Network.Socket.ByteString.Lazy as NSBL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
-import Data.ByteString.UTF8 (fromString, toString)
+import Data.ByteString.UTF8 (fromString)
 import qualified Network.BSD as NBSD
 import Control.Monad
 import Control.Concurrent
-import Debug.Trace
 import SCTP.Types
 import SCTP.Utils
 import SCTP.Socket.Types
 import SCTP.Socket.Utils
 import SCTP.Socket.Timer
-import Data.Word
 import qualified Data.Map as Map
-import Control.Concurrent.MVar
 import System.Random
 import Data.Time.Clock
 
+protocolNumber :: Int
 protocolNumber = 132 -- at least I think it is..
                      -- change this to non-standard to circumvent
                      -- OS limitations wrt capturing kernel protocols
 
+maxMessageSize :: Int
 maxMessageSize = 4096 -- RFC specifies minimum of 1500
 
 {- Create an udp socket and use that as the raw socket backend -}
@@ -86,6 +83,7 @@ connect stack peerAddr eventhandler = do
     return socket
 
 {- Retransmit the init message -}
+initRetransmit :: Association -> Message -> Integer -> IO ()
 initRetransmit association message attempt = do
     if attempt < defaultMaxInitRetransmits
       then do
@@ -103,6 +101,7 @@ initRetransmit association message attempt = do
     timeOut = associationTimeOut association
 
 {- Close the connection -}
+closeConnection :: Association -> IO()
 closeConnection association = return ()
 
 {- Send a string -}
@@ -118,8 +117,8 @@ sendData association bytes = do
   where
     message = Message header [toChunk payload]
     header = makeHeader association 0
-    payload = Payload 0 True True True length tsn 0 0 0 $ BL.fromChunks [padded_bytes]
-    length = fixedPayloadLength + (fromIntegral $ BS.length bytes)
+    payload = Payload 0 True True True pLength tsn 0 0 0 $ BL.fromChunks [padded_bytes]
+    pLength = fixedPayloadLength + (fromIntegral $ BS.length bytes)
     padded_bytes = payloadPad bytes
     peerAddress = associationPeerAddress association
     socket = associationSocket association
@@ -196,10 +195,10 @@ handlePayload association@Association{..} payload = do
     (eventhandler associationSocket) $ Data association $ userData payload
     return association
 
-acknowledge :: Association -> Payload -> IO(Association)
+acknowledge :: Association -> Payload -> IO()
 acknowledge association@Association{..} Payload{..} = do
     socketSendMessage associationSocket (ipAddress associationPeerAddress, portNumber associationPeerAddress) message
-    return association
+    return ()
   where
     message = Message (makeHeader association 0) [toChunk sack]
     sack = SelectiveAck tsn 1 [] []
@@ -210,22 +209,22 @@ handleSelectiveAck association@Association{..} SelectiveAck{..} = do
     return association
 
 handleInit :: Socket -> IpAddress -> Message -> IO()
-handleInit socket@ConnectSocket{} _ message = return () -- throw away init's when we're not listening
+handleInit ConnectSocket{} _ _ = return () -- throw away init's when we're not listening
 handleInit socket@ListenSocket{} address message = do
     time <- getCurrentTime
     myVT <- randomIO :: IO Int
     myTSN <- randomIO :: IO Int
     let responseMessage = makeInitResponse address message secret time myVT myTSN
     socketSendMessage socket (address, portnum) responseMessage
-    return ()
   where
     secret = secretKey socket
     portnum = fromIntegral $ (sourcePortNumber.header) message
 
-socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO(Int)
+socketSendMessage :: Socket -> (IpAddress, NBSD.PortNumber) -> Message -> IO()
 socketSendMessage socket address message = do
     --putStrLn $ "SendMessage: " ++ (show message) ++ "To: " ++ (show address)
-    NSB.sendTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
+    _ <- NSB.sendTo (underLyingSocket $ stack socket) messageBytes (sockAddr address)
+    return ()
   where
     messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
 
@@ -234,7 +233,7 @@ socketSendMessage socket address message = do
  - acknowledgement is sent to the connecting party.
  -}
 handleCookieEcho :: Socket -> IpAddress -> Message -> IO()
-handleCookieEcho socket@ConnectSocket{} peerAddr message = return ()
+handleCookieEcho ConnectSocket{} _ _ = return ()
 handleCookieEcho socket@ListenSocket{} peerAddr message = do
     when validMac $ do
         assocs <- takeMVar $ associations socket
