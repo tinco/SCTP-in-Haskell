@@ -1,8 +1,34 @@
 \chapter{Process}
 \section{Approach}
-To explore different styles we have implemented the SCTP protocol\cite{_rfc_????} in Haskell using different styles.
-\section{Initial Implementation}
+To explore different styles we have implemented the foundations of the SCTP protocol\cite{_rfc_????} in Haskell. The implementation yields valuable insight into which I/O functions are used and how they interact with eachother.
+\section{Monadic Style}
 %Architecture
+The architecture of the monadic style implementation makes use of events.
+
+The interfacing program first starts the stack. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket. Every time a packet arrives at the stack the read yields. The stack then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for.
+
+The interfacing application can register a socket at the stack by either calling the 'connect' or 'listen' function with an address and an event handler function as parameters.
+When the stack finds a socket that accepts data on the right port it call 'socketAcceptMessage' with the message and the source as parameters.
+
+The 'socketAcceptMessage' function checks and decodes the message calls the handle function for the particular type of the message. The handler functions perform actions like creating associations, transferring data and tearing associations down. When an action is performed that the interfacing application could be interested in, such as an incoming connection or received data, the event handler the application registered is called with an event object with relevant information.
+
+The implementation of the architecture has a clear separation between pure and I/O functions. All I/O functions are in the 'socket.hs' file, which is the main interface. All non-I/O functions have been extracted into utility functions and placed into different files. This clear separation allows us to clearly see what I/O actions are performed by each function.
+
+\begin{itemize}
+\item To receive and send data, an operating system socket is created and the sendTo and recvFrom functions are called. Whenever a new socket is created a portnumber is also requested from the operating system.
+\item To allow for multiple sockets to be created on the stack, a separate thread is spawned and the list of sockets is stored in an MVar.
+\item To allow for timed events, network events and application events to affect an association, associations are stored in an MVar and timers are run in separate threads.
+\item To create a cookie the getCurrentTime is called. The timers call getCPUTime for small grained timing.
+\item To secure associations randomIO is called to generate random numbers.
+\item To allow the application interface to have side effects, the event handler is also an IO function.
+\end{itemize}
+
+These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. As we suspected the network protocol implementation really covers all of the I/O types.
+
+% Now we have a clear image of what kinds of I/O actions are performed we can analyze.
+
+Another advantage of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell even has a quickcheck function that runs random data through the functions to verify properties. This made verifying the message parsing functions and the cookie creation function a breeze.
+
 % -- why split I/O and pure
 % -- why eventhandler?
 % -- planning, type driven development
