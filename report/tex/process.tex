@@ -2,7 +2,7 @@
 \section{Approach}
 To explore different styles we have implemented the foundations of the SCTP protocol\cite{_rfc_????} in Haskell. The implementation yields valuable insight into which I/O functions are used and how they interact with eachother.
 \section{Monadic Style}
-%Architecture
+\paragraph{Architecture}
 The architecture of the monadic style implementation makes use of events.
 
 The interfacing program first starts the stack. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket. Every time a packet arrives at the stack the read yields. The stack then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for.
@@ -32,6 +32,8 @@ These actions cover the four categories of the awkward squad \cite{jones_tacklin
 Another advantage of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell even has a quickcheck function that runs random data through the functions to verify properties. This made verifying the message parsing functions and the cookie creation function a breeze.
 
 One I/O implementation specific detail that leaks into the separated files is the concurrent state primitive MVar. The stack, the sockets and the associations all have an MVar member which allow separate threads to mutate their states safely.
+
+
 
 % -- why split I/O and pure
 % -- why eventhandler?
