@@ -3,8 +3,9 @@
 To explore different styles we have implemented the foundations of the SCTP protocol\cite{_rfc_????} in Haskell. The implementation yields valuable insight into which I/O functions are used and how they interact with eachother.
 \section{Monadic Style}
 \paragraph{Architecture}
-The architecture of the monadic style implementation makes use of events.
+The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler is called with the relevant data.
 
+\paragraph{Operation}
 The interfacing program first starts the stack. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket. Every time a packet arrives at the stack the read yields. The stack then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for.
 
 The interfacing application can register a socket at the stack by either calling the 'connect' or 'listen' function with an address and an event handler function as parameters.
@@ -14,6 +15,7 @@ The 'socketAcceptMessage' function checks and decodes the message calls the hand
 
 Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted. The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks wether enough time has passed. If it has the function associated to the timer is called.
 
+\paragraph{Analysis}
 The implementation of the architecture has a clear separation between pure and I/O functions. All I/O functions are in the 'socket.hs' file, which is the main interface. All non-I/O functions have been extracted into utility functions and placed into different files. This clear separation allows us to clearly see what I/O actions are performed by each function.
 
 \begin{itemize}
@@ -27,13 +29,16 @@ The implementation of the architecture has a clear separation between pure and I
 
 These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. As we suspected the network protocol implementation really covers all of the I/O types.
 
-%Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning. Before it was done the project looked a lot like it would in any regular imperative language, assignments and I/O calls were mixed together with protocol logic and 
+Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the great benefits would not have been reaped.
 
-Another advantage of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell even has a quickcheck function that runs random data through the functions to verify properties. This made verifying the message parsing functions and the cookie creation function a breeze.
+Another example of the benefits of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell even has a quickcheck function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function a breeze. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
 
-One I/O implementation specific detail that leaks into the separated files is the concurrent state primitive MVar. The stack, the sockets and the associations all have an MVar member which allow separate threads to mutate their states safely.
+The implementation looks a lot like it would in any regular imperative language, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
+A disadvantage is that for higher order functions utility functions like 'liftM' or monad specific functions like 'mapM' are required. This makes expressing the logic in a functional way more complex leading the programmer to more imperative style constructs like 'if/else'.
 
+One I/O implementation specific detail that leaks into the otherwise pure types is the concurrent state primitive MVar. The the association has an MVar member which allows both the data receiving thread and the timers to mutate its state safely. Ideally the association would not be contaminated with this implementation specific information.
 
+%\paragraph{Conclusion}
 
 % -- why split I/O and pure
 % -- why eventhandler?
