@@ -1,0 +1,7 @@
+\chapter{Technologies}
+\section{The functional language}
+The programming language we are focussing on is Haskell. This language is of special interest because of several properties it has that makes it suitable for network programming. First of all Haskell aims to be an as pure program language as possible. In the currently most popular implementation of Haskell this is achieved by executing side effects in a so called Monad. How this works will be explained in a later chapter. The absence of side effects in Haskell makes it easier to understand complex behaviour and even prove that code follows contracts. This aids greatly when implementing network protocols which usually are well specified and follow strict contracts. That Haskell sports memory management and immutable data also improves the security of the implementation, thwarting buffer overruns and other unintended state manipulation.
+
+Other functional programming languages also sport very interesting properties. Erlang for example claims to be a language with fault tolerance and concurrency as a prime feature\cite{armstrong_concurrent_1993}. The Scala language claims to be scalable by being easily composable\cite{odersky_overview_????}. These and other features have made them popular languages amongst network oriented applications. This report will also explore these languages and their styles.
+\section{The network protocol}
+Stukje over SCTP
