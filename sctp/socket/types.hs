@@ -10,6 +10,14 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Word
 
+protocolNumber :: Int
+protocolNumber = 132 -- at least I think it is..
+                     -- change this to non-standard to circumvent
+                     -- OS limitations wrt capturing kernel protocols
+
+maxMessageSize :: Int
+maxMessageSize = 4096 -- RFC specifies minimum of 1500
+
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
     address :: IpAddress,
