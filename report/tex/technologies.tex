@@ -1,7 +1,49 @@
 \chapter{Technologies}
 \section{The functional language}
-The programming language we are focussing on is Haskell. This language is of special interest because of several properties it has that makes it suitable for network programming. First of all Haskell aims to be an as pure program language as possible. In the currently most popular implementation of Haskell this is achieved by executing side effects in a so called Monad. How this works will be explained in a later chapter. The absence of side effects in Haskell makes it easier to understand complex behaviour and even prove that code follows contracts. This aids greatly when implementing network protocols which usually are well specified and follow strict contracts. That Haskell sports memory management and immutable data also improves the security of the implementation, thwarting buffer overruns and other unintended state manipulation.
+\paragraph{Why Haskell}
+The programming language we are focussing on is Haskell.
+This language is of special interest because of several properties it has that makes it suitable for network programming.
+First of all Haskell aims to be an as pure program language as possible.
+In the currently most popular implementation of Haskell this is achieved by executing side effects in a so called Monad.
+How this works will be explained in a later chapter.
+% When code is free of side effects the amount of bugs that can occur in that code is significantly reduced.
+The absence of side effects in pure Haskell makes it easier to understand complex behaviour and even prove that code follows contracts.
+This aids greatly when implementing network protocols which usually are well specified and follow strict contracts.
+That Haskell sports memory management and immutable data also improves the security of the implementation, thwarting buffer overruns and other unintended state manipulation.
 
-Other functional programming languages also sport very interesting properties. Erlang for example claims to be a language with fault tolerance and concurrency as a prime feature\cite{armstrong_concurrent_1993}. The Scala language claims to be scalable by being easily composable\cite{odersky_overview_????}. These and other features have made them popular languages amongst network oriented applications. This report will also explore these languages and their styles.
+Other functional programming languages also sport very interesting properties.
+Erlang for example claims to be a language with fault tolerance and concurrency as a prime feature\cite{armstrong_concurrent_1993}.
+The Scala language claims to be scalable by being easily composable\cite{odersky_overview_????}.
+These and other features have made them popular languages amongst network oriented applications. % cite?
+\paragraph{A short introduction to Haskell}
 \section{The network protocol}
-Stukje over SCTP
+\paragraph{Why SCTP}
+The network protocol we will implement is SCTP.
+To test if the I/O styles are useable in practice the chosen network protocol must make heavy use of side effects that interact with eachother.
+We look to a transport layer protocol because these protocols deal with all the uncertain properties of transporting data over a network, abstracting them for a large part as a service to the application layer.
+A transport layer protocol deals with corrupt data, data that has been received out of order, data that is expected but never arrives, data that is late, data that is congested or congesting, data that is ill-intendedly constructed, data that is to be multiplexed or demultiplexed.
+SCTP deals with many of these things, to provide a more reliable data stream for the application layer.
+While SCTP deals with many of the same things as TCP does, and even a few more, its specification is quite a bit simpler and more modern, which is why it was chosen for this report.
+\paragraph{A short introduction to SCTP}
+From the RFC4960\cite{_rfc_????}
+\begin{quotation}
+SCTP is a reliable transport protocol operating on top of a
+   connectionless packet network such as IP.  It offers the following
+   services to its users:
+\begin{itemize}
+
+   \item  acknowledged error-free non-duplicated transfer of user data
+
+   \item data fragmentation to conform to discovered path MTU size
+
+   \item sequenced delivery of user messages within multiple streams, with
+       an option for order-of-arrival delivery of individual user
+       messages
+
+   \item optional bundling of multiple user messages into a single SCTP
+       packet
+
+   \item network-level fault tolerance through supporting of multi-homing
+       at either or both ends of an association.
+\end{itemize}
+\end{quotation}
