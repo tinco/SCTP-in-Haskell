@@ -16,6 +16,24 @@ Erlang for example claims to be a language with fault tolerance and concurrency 
 The Scala language claims to be scalable by being easily composable\cite{odersky_overview_????}.
 These and other features have made them popular languages amongst network oriented applications. % cite?
 \paragraph{A short introduction to Haskell}
+Haskell is a functional programming language that uses indentation to denote scopes. A simple example that shows off some of Haskell's basic features is shown below:
+
+\begin{lstlisting}[caption={Fibonacci}]
+-- Returns the n-th number in the Fibonacci sequence
+fib :: Int -> Int
+fib 0 = 1
+fib 1 = 1
+fib n = a + b
+  where
+    a = fib (n-1)
+    b = fib (n-2)
+\end{lstlisting}
+
+The first line in this code snippet is commented since it is prefixed with --. Haskell also allows block comments beginning with {- and ending with -}.
+The second line is the type signature of the fib function. This is optional but recommended, if it is omitted the types are inferred from the function body. In this case the function is explicitly defined as taking a single integer as a parameter, and returning a single integer as the result.
+The third and fourth lines are two of the three partial implementations of the fib function.  The parameter is restricted to the values 0 and 1 respectively, and their implementations are what follows after the =, to return 1 as a base case of the function.
+The fifth line is the general case of the function. Here the parameter is unrestricted and given the name n. The implementation adds two values a and b, they are defined in the where block below the where keyword.
+Lines 7 and 8 define the a and b values to be the result of recursive calls to the fib function with the parameter diminished by one and two respectively.
 \section{The network protocol}
 \paragraph{Why SCTP}
 The network protocol we will implement is SCTP.
@@ -32,7 +50,7 @@ SCTP is a reliable transport protocol operating on top of a
    services to its users:
 \begin{itemize}
 
-   \item  acknowledged error-free non-duplicated transfer of user data
+   \item acknowledged error-free non-duplicated transfer of user data
 
    \item data fragmentation to conform to discovered path MTU size
 
@@ -47,3 +65,9 @@ SCTP is a reliable transport protocol operating on top of a
        at either or both ends of an association.
 \end{itemize}
 \end{quotation}
+
+To set up an SCTP connection a handshake is performed. The connecting party sends a connection request to the listening party. The listening party creates a cookie with information about the connecting party and encrypts it with a secret key and sends it to the connecting party. The connecting party then echoes this cookie. The listening party decrypts the cookie, discovers that the connecting party really is committed to making the connection and then commits itself to the connection. This handshake makes sure the listening party does not commit resources to a connecting party before it is sure the connecting party has not spoofed its address.
+
+After the connection is set up the parties send eachother messages. These messages consist of a common header, containing the source and destination ports and a checksum, and one or more chunks. The chunks can be protocol messages like heartbeat, shutdown or data acknowledgement or they could be data messages as supplied by the application layer.
+
+The data messages are selectively acknowledged, this means an acknowledgement chunk can acknowledge multiple data fragments, even when they were received out of order or with gaps between them. A timer is kept for each sent data fragment when a fragment goes without acknowledgement for too long it is considered lost and will be retransmitted. 
