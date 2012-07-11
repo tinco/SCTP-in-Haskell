@@ -51,6 +51,7 @@ serializeMessage message =
     headerbytes = serializeCommonHeader $ header message
     chunkbytes = map serializeChunk $ chunks message
 
+deserializeMessage :: ByteString -> Message
 deserializeMessage bytes = Message header chunks
     where
         (header_bytes, chunk_bytes) = BS.splitAt (fromIntegral commonHeaderSize) bytes

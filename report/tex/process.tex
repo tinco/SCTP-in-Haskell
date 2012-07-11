@@ -1,22 +1,101 @@
 \chapter{Process}
 \section{Approach}
 To explore different styles we have implemented the foundations of the SCTP protocol\cite{_rfc_????} in Haskell. The implementation yields valuable insight into which I/O functions are used and how they interact with eachother.
+To make implementing the different I/O styles a simple and fast process we have made a clear separation between pure and I/O functions. All non-I/O functions have been extracted into utility functions and placed into different files so they can be reused by the different implementations. This clear separation also allows us to clearly see what I/O actions are performed by each function, without distractions by complex pure functions.
+
+\begin{lstlisting}[caption={An example of a shared pure function}]
+deserializeMessage :: ByteString -> Message
+deserializeMessage bytes = Message header chunks
+    where
+        (header_bytes, chunk_bytes) =
+            BS.splitAt (fromIntegral commonHeaderSize) bytes
+        header = deserializeCommonHeader $
+            BL.fromChunks [header_bytes]
+        chunks = deserializeChunks $
+            BL.fromChunks [chunk_bytes]
+\end{lstlisting}
 \section{Monadic Style}
 \paragraph{Architecture}
 The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler is called with the relevant data.
 
+\begin{lstlisting}[caption={The eventhandler is called when a payload is received}]
+handlePayload :: Association -> Payload -> IO(Association)
+handlePayload association@Association{..} payload = do 
+    acknowledge association payload
+    (eventhandler associationSocket) $
+	    Data association $ userData payload
+    return association
+\end{lstlisting}
+
 \paragraph{Operation}
 The interfacing program first starts the stack. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket. Every time a packet arrives at the stack the read yields. The stack then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for.
 
+\begin{lstlisting}[caption={The stack loop}]
+stackLoop :: SCTP -> IO ()
+stackLoop stack = forever $ do
+    (bytes, peerAddress) <- NSB.recvFrom 
+        (underLyingSocket stack) maxMessageSize
+    let message = deserializeMessage bytes
+    let h = header message
+    let destination = (address stack,
+                       destinationPortNumber h)
+    sockets <- readMVar (instances stack)
+    case Map.lookup destination sockets of
+        Just socket -> socketAcceptMessage socket
+                       (ipAddress peerAddress) message
+        Nothing -> return ()
+\end{lstlisting}
 The interfacing application can register a socket at the stack by either calling the 'connect' or 'listen' function with an address and an event handler function as parameters.
 When the stack finds a socket that accepts data on the right port it call 'socketAcceptMessage' with the message and the source as parameters.
 
 The 'socketAcceptMessage' function checks and decodes the message calls the handle function for the particular type of the message. The handler functions perform actions like creating associations, transferring data and tearing associations down. When an action is performed that the interfacing application could be interested in, such as an incoming connection or received data, the event handler the application registered is called with an event object with relevant information.
 
+\begin{lstlisting}[caption={socketAcceptMessage decides what to do with a message}]
+socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
+socketAcceptMessage socket address message = do
+    (eventhandler socket) (OtherEvent message)
+    -- Drop packet if verifyChecksum fails
+    when (verifyChecksum message) $ do
+        let tag = verificationTag $ header message
+        -- verification tag is 0, so message MUST be INIT
+        if tag == 0 
+            then handleInit socket address message
+            else do
+                let allChunks@(firstChunk : restChunks) =
+                    chunks message
+                let toProcess
+                    | chunkType firstChunk ==
+                        cookieEchoChunkType = restChunks
+                    | otherwise = allChunks
+                when (chunkType firstChunk == 
+                  cookieEchoChunkType) $
+                    handleCookieEcho socket address message
+                unless (toProcess == []) $ do
+                    processOnSocket socket tag toProcess
+\end{lstlisting}
+
 Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted. The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks wether enough time has passed. If it has the function associated to the timer is called.
 
+\begin{lstlisting}[caption={The init retransmission function}]
+initRetransmit :: Association -> Message -> Integer -> IO ()
+initRetransmit association message attempt = do
+    if attempt < defaultMaxInitRetransmits
+      then do
+          socketSendMessage socket 
+            (ipAddress peerAddr, portNumber peerAddr)
+              message
+          registerTimer timer 0
+            (initRetransmit association message $ attempt+1)
+              timeOut
+          return ()
+      else do
+          closeConnection association
+          (eventhandler socket) $ Error "Could not connect."
+          return ()
+\end{lstlisting}
+
 \paragraph{Analysis}
-The implementation of the architecture has a clear separation between pure and I/O functions. All I/O functions are in the 'socket.hs' file, which is the main interface. All non-I/O functions have been extracted into utility functions and placed into different files. This clear separation allows us to clearly see what I/O actions are performed by each function.
+Since implementation has a clear separation between pure and I/O functions we can easily see what I/O actions are performed by each function. 
 
 \begin{itemize}
 \item To receive and send data, an operating system socket is created and the sendTo and recvFrom functions are called. Whenever a new socket is created a portnumber is also requested from the operating system.
@@ -35,6 +114,36 @@ Another example of the benefits of splitting the I/O and the pure functions is t
 
 The implementation looks a lot like it would in any regular imperative language, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
 A disadvantage is that for higher order functions utility functions like 'liftM' or monad specific functions like 'mapM' are required. This makes expressing the logic in a functional way more complex leading the programmer to more imperative style constructs like 'if/else'.
+
+\begin{lstlisting}[caption={The connect function looks imperative}]
+connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO Socket
+connect stack peerAddr eventhandler = do
+    keyValues <- replicateM 4 (randomIO :: IO Int)
+    myVT <- liftM fromIntegral (randomIO :: IO Int)
+    myPort <- liftM fromIntegral $ do 
+        let portnum = testUdpPort + 1
+        return portnum -- TODO obtain portnumber
+
+    let myAddr = sockAddr (address stack, fromIntegral myPort)
+    associationMVar <- newEmptyMVar
+    initTimer <- startTimer 10
+
+    let socket = makeConnectionSocket stack myVT
+                    associationMVar myAddr
+                    eventhandler peerAddr
+    let association' = makeAssociation socket (myVT) 
+                           myPort peerAddr initTimer
+    putMVar (association socket) association'
+    registerSocket stack myAddr socket
+
+    let initMessage = makeInitMessage myVT myPort peerAddr
+    socketSendMessage socket 
+        (ipAddress peerAddr, portNumber peerAddr) initMessage
+    registerTimer initTimer 0 
+        (initRetransmit association' initMessage 0)
+        (associationTimeOut association')
+    return socket
+\end{lstlisting}
 
 One I/O implementation specific detail that leaks into the otherwise pure types is the concurrent state primitive MVar. The the association has an MVar member which allows both the data receiving thread and the timers to mutate its state safely. Ideally the association would not be contaminated with this implementation specific information.
 

@@ -136,14 +136,15 @@ socketAcceptMessage socket address message = do
                         | otherwise = allChunks
                 when (chunkType firstChunk == cookieEchoChunkType) $ handleCookieEcho socket address message
                 unless (toProcess == []) $ do
-                    withAssociation socket tag toProcess
+                    processOnSocket socket tag toProcess
   where
-    processChunks association toProcess = foldM (handleChunk socket) association toProcess
-    withAssociation ConnectSocket{} _ chunks = do
+    processChunks association toProcess =
+        foldM (handleChunk socket) association toProcess
+    processOnSocket ConnectSocket{} _ chunks = do
         assoc <- takeMVar $ association socket
         assoc' <- processChunks assoc chunks
         putMVar (association socket) assoc'
-    withAssociation ListenSocket{} tag chunks = do
+    processOnSocket ListenSocket{} tag chunks = do
         assocs <- takeMVar (associations socket)
         case Map.lookup tag assocs of
             Just assoc -> do
