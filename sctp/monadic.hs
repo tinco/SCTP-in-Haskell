@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module SCTP.Socket.Streams where
+module SCTP.Monadic where
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
 import qualified Data.ByteString as BS
@@ -17,23 +17,6 @@ import qualified Data.Map as Map
 import System.Random
 import Data.Time.Clock
 
--- Registering:
-main = do
-    starthandlersLoop handlers
-  where
-    starthandler = readFromNetwork
-    handlers = [starthandler]
-
-
-eventFilter :: [Event] -> (Event -> Bool) -> ([Event], Event)
-putStrLn :: [Char] -> Event
-
-readFromNetwork :: [Event] -> [Event]
-readFromNetwork events = events''
-  where
-    (events', Maybe (Data d)) = eventFilter events networkEvent
-    events'' = (putStrLn $ toString d) : events' 
- 
 {- Create an udp socket and use that as the raw socket backend -}
 start_on_udp :: NS.SockAddr -> IO (SCTP)
 start_on_udp address =
