@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module SCTP.Streams.Action where
+import qualified Data.ByteString as BS
 import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
 import qualified StreamIO as IO
@@ -8,10 +9,13 @@ import Control.Monad
 import Control.Concurrent
 import System.CPUTime
 import System.Random
+import Data.Time.Clock
 
 data Action = MakeUdpSocket NS.SockAddr | ListenSocket NS.Socket Int | StopStack
-            | RandomInteger Int | FreePortNumber 
-            | Delay Int Integer Event deriving (Eq, Show)
+            | RandomInteger Int | FreePortNumber | GetTime
+            | Delay Int Integer Event 
+            | SendUdpMessage NS.Socket BS.ByteString NS.SockAddr 
+            deriving (Eq, Show)
 
 instance IO.Action Action Event where
     stopAction = StopStack
@@ -22,6 +26,10 @@ instance IO.Action Action Event where
 
     handleIO eventer (ListenSocket sock maxMessageSize) =
         forever $ liftM eventer $ liftM GotUdpMessage $ NSB.recvFrom sock maxMessageSize
+
+    handleIO eventer (SendUdpMessage sock bytes addr) = do
+        n <- NSB.sendTo sock bytes addr
+        eventer $ SentMessage n
 
     handleIO eventer (RandomInteger n) = do
         randoms <- replicateM n (randomIO :: IO Int)
@@ -44,6 +52,10 @@ instance IO.Action Action Event where
         timerLoop
       where
         toMilliseconds time = time `div` (10^9)
+
+    handleIO eventer GetTime = do
+        time <- getCurrentTime
+        eventer $ Time time
 
     handleIO eventer StopStack = do
                         putStrLn "Goodbye"
