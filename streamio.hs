@@ -23,7 +23,7 @@ class Event e where
 
 class Eq a => Action a e | a -> e  where
     stopAction :: a
-    handleIO :: a -> IO e
+    handleIO :: (e -> IO()) -> a -> IO()
 
 class State s where
     startState :: s
