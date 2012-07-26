@@ -11,9 +11,32 @@ import Data.Bits
 import Data.HMAC
 import Debug.Trace
 import Control.Monad
+import Network.Socket (HostAddress, HostAddress6)
+import qualified Network.Socket as NS
 
 data IpAddress = IPv4 Word32 | IPv6 (Word32, Word32, Word32, Word32)
     deriving (Show, Eq, Ord)
+
+ipAddress :: NS.SockAddr -> IpAddress
+ipAddress (NS.SockAddrInet port host) = IPv4 host
+ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
+
+portNumber :: NS.SockAddr -> NS.PortNumber
+portNumber (NS.SockAddrInet port host) = port
+portNumber (NS.SockAddrInet6 port flow host scope) = port
+
+sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
+sockAddr (IPv4 host, port) = NS.SockAddrInet port host
+sockAddr (IPv6 host, port) = NS.SockAddrInet6 port 0 host 0
+
+protocolNumber :: Int
+protocolNumber = 132 -- at least I think it is..
+                     -- change this to non-standard to circumvent
+                     -- OS limitations wrt capturing kernel protocols
+
+maxMessageSize :: Int
+maxMessageSize = 4096 -- RFC specifies minimum of 1500
+
 
 {-
    RTO.Initial              - 3  seconds

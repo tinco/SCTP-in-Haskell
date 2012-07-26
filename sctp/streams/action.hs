@@ -5,17 +5,21 @@ import qualified Network.Socket as NS
 import qualified Network.Socket.ByteString as NSB
 import qualified StreamIO as IO
 import SCTP.Streams.Event
+import SCTP.Streams.State
 import Control.Monad
 import Control.Concurrent
 import System.CPUTime
 import System.Random
 import Data.Time.Clock
 
-data Action = MakeUdpSocket NS.SockAddr | ListenSocket NS.Socket Int | StopStack
-            | RandomInteger Int | FreePortNumber | GetTime
+data Action = MakeUdpSocket NS.SockAddr | ListenOnSocket NS.Socket Int | StopStack
+            | RandomInteger | FreePortNumber | GetTime
             | Delay Int Integer Event 
             | SendUdpMessage NS.Socket BS.ByteString NS.SockAddr 
-            deriving (Eq, Show)
+            | MakeThread (IO.Handler Action Event State) State
+            | Emit (IO.Eventer Event) Event
+            | Eventer
+            deriving (Eq)
 
 instance IO.Action Action Event where
     stopAction = StopStack
@@ -24,16 +28,16 @@ instance IO.Action Action Event where
         NS.bindSocket sock address
         eventer $ MadeUdpSocket sock
 
-    handleIO eventer (ListenSocket sock maxMessageSize) =
+    handleIO eventer (ListenOnSocket sock maxMessageSize) =
         forever $ liftM eventer $ liftM GotUdpMessage $ NSB.recvFrom sock maxMessageSize
 
     handleIO eventer (SendUdpMessage sock bytes addr) = do
         n <- NSB.sendTo sock bytes addr
         eventer $ SentMessage n
 
-    handleIO eventer (RandomInteger n) = do
-        randoms <- replicateM n (randomIO :: IO Int)
-        eventer $ GotRandomIntegers randoms
+    handleIO eventer (RandomInteger) = do
+        randoms <- randomIO :: IO Int
+        eventer $ GotRandomInteger randoms
 
     handleIO eventer (FreePortNumber) =
         eventer $ GotPortNumber 642213 --TODO obtain portnumber
@@ -56,6 +60,12 @@ instance IO.Action Action Event where
     handleIO eventer GetTime = do
         time <- getCurrentTime
         eventer $ Time time
+
+    handleIO _ (MakeThread handler state) = IO.handlerLoop state handler 
+
+    handleIO _ (Emit eventer event) = eventer event 
+
+    handleIO eventer Eventer = eventer $ GotEventer eventer
 
     handleIO eventer StopStack = do
                         putStrLn "Goodbye"

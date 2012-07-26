@@ -10,14 +10,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Word
 
-protocolNumber :: Int
-protocolNumber = 132 -- at least I think it is..
-                     -- change this to non-standard to circumvent
-                     -- OS limitations wrt capturing kernel protocols
-
-maxMessageSize :: Int
-maxMessageSize = 4096 -- RFC specifies minimum of 1500
-
 data SCTP = MkSCTP {
     underLyingSocket :: NS.Socket,
     address :: IpAddress,
@@ -70,16 +62,3 @@ data Association = Association {
 data AssociationState = COOKIEWAIT | COOKIEECHOED | ESTABLISHED |
                         SHUTDOWNPENDING | SHUTDOWNSENT | SHUTDOWNRECEIVED |
                         SHUTDOWNACKSENT
-
-
-ipAddress :: NS.SockAddr -> IpAddress
-ipAddress (NS.SockAddrInet port host) = IPv4 host
-ipAddress (NS.SockAddrInet6 port flow host scope) = IPv6 host
-
-portNumber :: NS.SockAddr -> NS.PortNumber
-portNumber (NS.SockAddrInet port host) = port
-portNumber (NS.SockAddrInet6 port flow host scope) = port
-
-sockAddr :: (IpAddress, NS.PortNumber) -> NS.SockAddr
-sockAddr (IPv4 host, port) = NS.SockAddrInet port host
-sockAddr (IPv6 host, port) = NS.SockAddrInet6 port 0 host 0
