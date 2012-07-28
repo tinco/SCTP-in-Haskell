@@ -43,45 +43,27 @@ handler s@(Established eventer listenAddress sock sockets) (GotUdpMessage (bytes
         sockets'' = Map.insert destination socket' sockets
 
 handler s@(Established e l sock sockets) event =
-    (Established e l sock (dispatch $ Map.toList sockets),actions)
+    (Established e l sock sockets', actions)
   where
+    (sockets', actions) = dispatch $ Map.toList sockets
     dispatch [] = (sockets,[])
-    dispatch ((k,socket):sockets') =
+    dispatch ((k,socket):sockets) =
         case socketHandler socket event of
-            Just socket' -> updateSocket socket'
-            Nothing -> dispatch sockets'
-    updateSocket socket = (sockets,actions)
-      where
-        sockets = (Map.insert k socket' sockets)
-        (socket', actions) = updateHandlers socket
+            Just (socket', actions) -> (sockets', actions)
+              where
+                sockets' = Map.insert k socket' (Map.fromList sockets)
+            Nothing -> dispatch sockets
 
-socketHandler socket (GotRandomInteger int)
-    | null end = Nothing
-    | otherwise = Just socket'
+socketHandler :: Socket -> Event -> Maybe HandleResult
+socketHandler socket event = runHandlers (socketHandlers socket) []
   where
-    (begin, end) = break eligibleInitHandler (socketInitHandlers socket)
-    eligibleInitHandler (InitHandler _ Nothing Nothing _) = True
-    eligibleInitHandler (InitHandler _ (Just _) Nothing _) = True
-    eligibleInitHandler (InitHandler _ (Just _) (Just _) _) = False
-    updateInitHandler (InitHandler a Nothing Nothing b) = InitHandler a (Just int) Nothing b
-    updateInitHandler (InitHandler a b Nothing c) = InitHandler a b (Just int) c
-    socket' = socket {
-        socketInitHandlers = (updateInitHandler $ head end) : begin ++ (tail end)
-    }
-
-socketHandler socket (Time time)
-    | null end = Nothing
-    | otherwise = Just socket'
-  where
-    (begin, end) = break eligibleInitHandler (socketInitHandlers socket)
-    eligibleInitHandler (InitHandler Nothing _ _ _) = True
-    eligibleInitHandler (InitHandler (Just _) _ _ _) = False
-    updateInitHandler (InitHandler Nothing a b c) = InitHandler (Just time) a b c
-    socket' = socket {
-        socketInitHandlers = (updateInitHandler $ head end) : begin ++ (tail end)
-    }
-
-type HandleResult = (Socket, [Action])
+    runHandlers (h:hs) hs' =
+        case h (socket {socketHandlers = []}) event of
+            Just (socket', actions) -> Just (socket'', actions)
+              where
+                socket'' = socket' {socketHandlers = hs' ++ (socketHandlers socket') ++ hs}
+            Nothing -> runHandler hs (hs'++ [h])
+    runHandler [] _ = Nothing
 
 socketAcceptMessage socket address message
     | tag == 0 = handleInit socket address message
@@ -114,13 +96,30 @@ handleChunk association r chunk
     t = chunkType chunk
     handler f = f association r $ fromChunk chunk
 
+socketSendMessage socket address message =
+    SendUdpMessage raw messageBytes address 
+  where
+    messageBytes = (BS.concat . BL.toChunks) $ serializeMessage message
+    raw = socketRaw socket
+
 handleInit socket@ConnectSocket{} _ _ = (socket, [])
 handleInit socket@ListenSocket{..} address message = (socket', actions)
   where
     actions = [RandomInteger, RandomInteger, GetTime]
-    handler = newInitHandler message
+    h (Nothing, Nothing, t) s (GotRandomInteger i) = handle s (Just i, Nothing, t)
+    h (i, Nothing, t) s (GotRandomInteger j) = handle s (i, Just j, t)
+    h (i, j, Nothing) s (Time t) = handle s (i,j,Just t)
+    h _ _ _ = Nothing
+    handle s (Just i, Just j, Just t) = Just (s,actions)
+      where
+        portnum = fromIntegral $ (sourcePortNumber.header) message
+        message' = makeInitResponse address message secretKey t i j
+        actions = [socketSendMessage s destination message']
+        destination = sockAddr (address, portnum)
+    handle s t = Just (s {socketHandlers = [h t]}, [])
+
     socket' = socket { 
-        socketInitHandlers = handler : socketInitHandlers socket'
+        socketHandlers = (socketHandlers socket') ++ [h (Nothing, Nothing, Nothing) ]
     }
 
 handleCookieEcho socket address message = (socket,[])
