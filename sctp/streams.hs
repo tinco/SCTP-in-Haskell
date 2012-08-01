@@ -70,7 +70,8 @@ handler s@(Established listenAddress sock sockets hs) (SCTPConnecter addr evente
         socket = ConnectSocket association vt CONNECTING addr (saddr) eventer sock []
         association = Association vt 0 COOKIEWAIT p addr defaultRTOInitial
         saddr = sockAddr (ipAddress listenAddress, fromIntegral p)
-        actions = []
+        message = makeInitMessage vt p addr
+        actions = [socketSendMessage socket addr message]
     handle t = Just (AHandler (h t))
 
 handler s@(Established l sock sockets handlers) event =
