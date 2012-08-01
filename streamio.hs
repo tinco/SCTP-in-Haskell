@@ -13,12 +13,13 @@ instance Eq (Handler a e s)where
 instance Eq (Eventer e) where
   (==) a b = True
 
-handlerLoop :: (Action a e, Event e) => s -> Handler a e s -> IO()
+handlerLoop :: (Action a e, Event e) => s -> Handler a e s -> IO (Eventer e)
 handlerLoop startState handler = do
     events <- newChan
-    eventLoop handler events startState startEvent
+    forkIO $ eventLoop handler events startState startEvent
+    return $ writeChan events
 
-eventLoop :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO()
+eventLoop :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO ()
 eventLoop handler events s event = do
     let (s', actions) = handler s event
     mapM_ (\a -> forkIO $ handleIO (writeChan events) a) actions

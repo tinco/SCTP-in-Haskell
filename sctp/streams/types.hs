@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, RecordWildCards #-}
 module SCTP.Streams.Types where
 import Network.Socket (HostAddress, HostAddress6)
 import qualified Network.Socket as NS
@@ -22,11 +22,13 @@ import Data.Time.Clock
 import SCTP.Types
 
 data Action = MakeUdpSocket NS.SockAddr | ListenOnSocket NS.Socket Int | StopStack
-            | RandomInteger | FreePortNumber | GetTime
+            | RandomInteger | FreePortNumber | GetTime | RandomIntegers Int 
             | Delay Int Integer Event 
             | SendUdpMessage NS.Socket BS.ByteString NS.SockAddr 
             | MakeThread (IO.Handler Action Event State) State
             | Emit (IO.Eventer Event) Event
+            | SCTPListen NS.SockAddr (IO.Eventer Event)
+            | SCTPConnect NS.SockAddr (IO.Eventer Event)
             | Eventer
             deriving (Eq)
 
@@ -47,6 +49,10 @@ instance IO.Action Action Event where
     handleIO eventer (RandomInteger) = do
         randoms <- randomIO :: IO Int
         eventer $ GotRandomInteger randoms
+
+    handleIO eventer (RandomIntegers n) = do
+        randoms <- replicateM n (randomIO :: IO Int)
+        eventer $ GotRandomIntegers n randoms
 
     handleIO eventer (FreePortNumber) =
         eventer $ GotPortNumber 642213 --TODO obtain portnumber
@@ -70,7 +76,9 @@ instance IO.Action Action Event where
         time <- getCurrentTime
         eventer $ Time time
 
-    handleIO _ (MakeThread handler state) = IO.handlerLoop state handler 
+    handleIO eventer (MakeThread handler state) = do
+        eventer' <- IO.handlerLoop state handler 
+        eventer $ MadeThread eventer'
 
     handleIO _ (Emit eventer event) = eventer event 
 
@@ -80,29 +88,32 @@ instance IO.Action Action Event where
                         putStrLn "Goodbye"
                         eventer Done
 
+data EitherResultOrHandler = AResult HandleResult | AHandler (Event -> Maybe EitherResultOrHandler) 
 
-data State = Setup (IO.Eventer Event) NS.SockAddr
+data State = Setup NS.SockAddr
            | Established {
-              sctpEventer :: (IO.Eventer Event),
               sctpUnderAddress :: NS.SockAddr,
               sctpUnderLyingSocket :: NS.Socket,
-              sctpSockets :: (Map.Map (IpAddress, PortNum) Socket)
+              sctpSockets :: (Map.Map (IpAddress, PortNum) Socket),
+              sctpHandlers :: [Event -> Maybe EitherResultOrHandler]
            }
 
 instance Eq State where
-  (==) (Setup _ a) (Setup _ b) = a == b
+  (==) (Setup a) (Setup b) = a == b
 
 instance Show State where
-  show (Setup _ a) = show a
+  show (Setup a) = show a
 
 
 data Socket =  
   -- Socket is an instance of SCTP
   ListenSocket {
       socketAssociations :: Map.Map VerificationTag Association,
-      secretKey :: BS.ByteString,
+      socketSecret :: BS.ByteString,
       socketEventer :: (Event -> IO()),
-      socketRaw :: NS.Socket
+      socketAddress :: NS.SockAddr,
+      socketRaw :: NS.Socket,
+      socketHandlers :: [Socket -> Event -> Maybe HandleResult]
   } |
   ConnectSocket {
       socketAssociation :: Association,
@@ -129,6 +140,8 @@ data Association = Association {
     associationState :: AssociationState,
     associationPort :: PortNum,
     associationPeerAddress :: NS.SockAddr,
-    associationSocket :: Socket,
     associationTimeOut :: Integer -- in milliseconds
 }
+
+associationHeader a@Association{..} =
+    CommonHeader associationPort ((fromIntegral.portNumber) associationPeerAddress) associationPeerVT

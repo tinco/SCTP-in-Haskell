@@ -54,7 +54,6 @@ listen stack sockaddr eventhandler = do
 {- Connect -}
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO (Socket)
 connect stack peerAddr eventhandler = do
-    keyValues <- replicateM 4 (randomIO :: IO(Int))
     myVT <- liftM fromIntegral (randomIO :: IO Int)
     myPort <- liftM fromIntegral $ do 
         let portnum = testUdpPort + 1

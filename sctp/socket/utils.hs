@@ -127,3 +127,14 @@ validateMac socket addr message = (validMac, almostAssociation)
     peerAddr = (addr, fromIntegral peerPort)
     almostAssociation = Association peerVT myVT ESTABLISHED myPortnum (sockAddr peerAddr) socket defaultRTOInitial
 
+
+validateMac_ myAddress secret message = (validMac, myVT, peerVT, myPortnum, peerPort)
+  where
+    cookieChunk = fromChunk $ head $ chunks message
+    (cookie,rest) = deserializeCookie $ cookieEcho cookieChunk
+    myVT = verificationTag $ header message
+    myPortnum = destinationPortNumber $ header message
+    myMac = makeMac cookie (fromIntegral myVT) myAddress myPortnum secret
+    validMac = myMac == (mac cookie)
+    peerVT =  peerVerificationTag cookie
+    peerPort = sourcePortNumber $ header message
