@@ -264,23 +264,30 @@ The obvious advantage to this is that it is per default concurrent. For example 
 
 \begin{lstlisting}[caption={The init handler}]
 handleInit socket@ConnectSocket{} _ _ = (socket, [])
-handleInit socket@ListenSocket{..} address message = (socket', actions)
+handleInit socket@ListenSocket{..} address message =
+    (socket', actions)
   where
     actions = [RandomInteger, RandomInteger, GetTime]
-    h (Nothing, Nothing, t) s (GotRandomInteger i) = handle s (Just i, Nothing, t)
-    h (i, Nothing, t) s (GotRandomInteger j) = handle s (i, Just j, t)
-    h (i, j, Nothing) s (Time t) = handle s (i,j,Just t)
+    h (Nothing, Nothing, t) s (GotRandomInteger i) =
+        handle s (Just i, Nothing, t)
+    h (i, Nothing, t) s (GotRandomInteger j) =
+        handle s (i, Just j, t)
+    h (i, j, Nothing) s (Time t) =
+        handle s (i,j,Just t)
     h _ _ _ = Nothing
     handle s (Just i, Just j, Just t) = Just (s,actions)
       where
-        portnum = fromIntegral $ (sourcePortNumber.header) message
-        message' = makeInitResponse address message socketSecret t i j
+        portnum = fromIntegral $
+                    (sourcePortNumber.header) message
+        message' = makeInitResponse address
+                        message socketSecret t i j
         actions = [socketSendMessage s destination message']
         destination = sockAddr (address, portnum)
     handle s t = Just (s {socketHandlers = [h t]}, [])
 
     socket' = socket { 
-        socketHandlers = (socketHandlers) ++ [h (Nothing, Nothing, Nothing) ]
+        socketHandlers = (socketHandlers) ++
+                            [h (Nothing, Nothing, Nothing) ]
     }
 \end{lstlisting}
 

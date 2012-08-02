@@ -1,5 +1,11 @@
 \chapter{Conclusion}
-We conclude something nice
-Yours sincerely,\\
+Having implemented the SCTP protocol in both a monadic and a stream-based I/O style and having analyzed their advantages and disadvantages we can make recommendations based on their merits.
 
-Tinco Andringa et al.
+The stream-based approach was deserted because the distance between actions and their responses. The problems this causes showed clearly in our implementation where a lot of complexity went into recombining the events with the handlers they were meant for. 
+The added complexity does have a merit though, it provides us with effortless concurrency. Actions are executed in parallel by default and the event loop makes sure we don't run into nasty race conditions.
+Forcing every action to be performed in a different thread does have its penalties though, it might cause more overhead on the CPU than the I/O delays warrant.
+
+The monadic I/O style is dominant in Haskell, which can probably be attributed to its ease of use. The binding operators of the monad allow the programmer to work on the results of actions right where the actions are called whilst still safely executing the actions in dictated order.
+The monad does not protect the programmer from concurrency problems more than any imperative programming language does, and requires the programmer to be explicit about concurrency. The concurrency primitives it offers are very easy to use but do introduce mutable state into the program.
+
+To further expand our knowledge of this domain we would suggest further research be done into the continuation passing style, which is another interesting I/O technique and in syntactic sugar for the stream-based style which might benefit greatly from reduced programming complexity.
