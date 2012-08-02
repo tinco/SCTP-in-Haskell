@@ -1,17 +1,17 @@
 \chapter{Goals}
 \section{Exploration}
-This report explores several programming styles that can be used to deal with the input, output and other side effects that occur when implementing a network protocol in a functional programming language.
-These I/O styles are a combination of functions and datastructures that embed the notion of side effects into an otherwise pure language, pure here meaning free from side effects.
-% From this exploration we attempt to discover which style and/or syntax is most suited for network protocol implementation.
-We will explore the styles by implementing a network protocol in every one of these styles and analyzing the advantages and disadvantages of using each style for the implementation of the network protocol.
+This report explores several programming techniques that can be used to deal with the input, output and other side effects that occur when implementing a network protocol in a functional programming language.
+These I/O techniques are a combination of functions and datastructures that embed the notion of side effects into an otherwise pure language, pure here meaning free from side effects.
+% From this exploration we attempt to discover which technique and/or syntax is most suited for network protocol implementation.
+We will explore the techniques by implementing a network protocol using each of these techniques and analyzing the advantages and disadvantages of using each technique for the implementation of the network protocol.
 
 For the exploration to have any bearing on network protocols in general we will select a network protocol that is basic but complex in nature and as such has a superset of features over most protocols. 
 Complex network protocols have many features that introduce side effects in their implementations such as timers and timeouts, concurrency, randomness and state.
-The exploration goal is to find out how the different I/O styles deal with these interactions.
+The exploration goal is to find out how the different I/O techniques deal with these interactions.
 % Robustness tells us something about how well the implementation deals with faults, heavy load and other real world problems.
 % Terseness or expressiveness is the amount of symbols required for the programmer the implement the protocol.
 % This must not be confused with readability, which tells something about how easy it is for someone unfamiliar with the implementation to understand the source code.
 % Correctness lastly tells us to what amount the code follows the specification exactly, does the implementation pose any extra limitations or leave room for extra undescribed behavior?
 
-\section{Comparing styles}
-Once all different styles have been explored, the report aims to pit the styles against eachother in a comparison to see if a universally superior style can be determined.
+\section{Comparing techniques}
+Once all different techniques have been explored, the report aims to pit the techniques against eachother in a comparison to see if a universally superior technique can be determined.

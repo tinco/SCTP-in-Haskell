@@ -31,8 +31,11 @@ main ~(Success : ~((Str userInput) : ~(Success : ~(r4 : _))))
 		]
 	where (name : _) = lines userInput
 \end{lstlisting}
+
+In this listing the '~' operator is used to indicate lazy pattern matching. This means that Haskell will attempt to match only when the values of the pattern are to be evaluated. This allows the programmer to match on the return value of the requests he issues in the function itself, using them for the further actions within that function.
+
 \subsection{Continuation-based I/O}
-In Haskell's continuation based style the application is still modeled as a stream of inputs mapping to a stream of outputs, but continuations are passed along which are called with the responses to the requests as parameter. The following source code is an example of a continuation-based readFile method implemented using stream-based I/O.
+In Haskell's continuation based style the application is still modeled as a stream of inputs mapping to a stream of outputs, but the lazy pattern matching is replaced by continuations. Continuations are functions that are passed as arguments to request functions and are called with the response value as parameter. The following source code is an example of a continuation-based readFile method implemented using stream-based I/O.
 
 \begin{lstlisting}[caption={Definition of readFile in continuation-based I/O in Haskell}]
 readFile :: Name-> FailCont -> StrCont -> Behaviour
@@ -78,7 +81,9 @@ main =
 		(appendChan stdout "can’t open file")
 \end{lstlisting}
 
-In this example the \lstinline!>>! composes two monads. When the \lstinline!return! method is called on the monad, the left computation is executed, and then the right computation is evaluated and then the right computation is applied to that. Since this approach became very popular in the Haskell community it completely replaced the stream- and continuation-based approaches. A syntactic sugar was also introduced reducing the previous example to:
+In this example the \lstinline!>>! chains together two actions, the \lstinline!>>=! operator does the same, but also makes the return value of the previous action available to the subsequent actions.
+
+Since this approach became very popular in the Haskell community it completely replaced the stream- and continuation-based approaches. A syntactic sugar was also introduced reducing the previous example to:
 
 \begin{lstlisting}[caption={Example of monadic I/O in Haskell}]
 main :: IO ()
@@ -91,4 +96,3 @@ main = do
 		appendChan stdout contents)
 		(appendChan stdout "can’t open file")
 \end{lstlisting}
-
