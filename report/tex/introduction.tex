@@ -2,24 +2,14 @@
 \addcontentsline{toc}{chapter}{Introduction}
 
 
-This document is a report on an exploration of two functional programming techniques.  The topic of the exploration is the implementation of a transport layer network protocol by the name of SCTP as specified by the IETF. 
-\\ \hfill \\
-The document is structured in the following way:
-\begin{description}
-\item In the first chapter the goals of the report are detailed. 
+This document is a report on an exploration of two functional programming techniques for dealing with side effects.
+The first technique is called monadic I/O, the second is called stream-based I/O.
+The most popular Haskell implementation, Glasgow Haskell Compiler (GHC) \cite{haskell_implementations}, has favored the monadic technique over the stream-based technique \cite{hudak_history_2007}.
+This report shows if it can still be relevant to work with side effects in a stream-based way. 
 
-\item In the second chapter the technologies and the reason for their selection are explained.
+The topic of the exploration is the implementation of a transport layer network protocol by the name of Stream Control Transmission Protocol (SCTP) as specified by the Internet Engineering Task Force (IETF).
 
-\item In the third chapter the ideas and history of I/O in Haskell are explained.
+The implementation of this protocol shows how each of the researched techniques can be used to handle the various side effects SCTP requires to function. 
 
-\item In the fourth chapter we go into some related work.
-
-\item In the fifth chapter we report on the exploration process.
-
-\item In the sixth chapter we present our conclusion.
-\end{description}
-
-
-
-
-
+In the first chapter the goals of the report are detailed. After that the technologies and the reason for their selection are explained. In the third chapter the report goes into the ideas and history of I/O in Haskell and in the fourth chapter it explores related work.
+The report elaborates on the exploration process in the fifth chapter and finally presents the conclusion of the research in the sixth chapter.
