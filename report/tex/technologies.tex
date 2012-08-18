@@ -2,21 +2,22 @@
 \section{The functional language}
 \paragraph{Why Haskell}
 The programming language we are focussing on is Haskell.
-This language is of special interest because of several properties it has that makes it suitable for network programming.
-First of all Haskell aims to be an as pure program language as possible.
-In the currently most popular implementation of Haskell this is achieved by executing side effects in a so called Monad.
+This language is of special interest because of several properties it has that makes it suitable for implementing a network protocol.
+First of all Haskell aims to be an as pure program language as possible. This makes it harder to achieve side effects which are important to a network protocol, but it does simplify algorithms and makes it easier to verify correctness when comparing the implementation to a specification.
+In the currently most popular implementation of Haskell side effects are introduced by executing them in a so called Monad.
 How this works will be explained in a later chapter.
 % When code is free of side effects the amount of bugs that can occur in that code is significantly reduced.
 The absence of side effects in pure Haskell makes it easier to understand complex behaviour and even prove that code follows contracts.
 This aids greatly when implementing network protocols which usually are well specified and follow strict contracts.
-That Haskell sports memory management and immutable data also improves the security of the implementation, thwarting buffer overruns and other unintended state manipulation.
+That Haskell features memory management and immutable data also improves the security of the implementation by moving the responsibility of protecting from buffer overruns and other unintended state manipulation to the runtime system, which has been thorougly battle tested.
 
-Other functional programming languages also sport very interesting properties.
+Other functional programming languages also have interesting properties.
 Erlang for example claims to be a language with fault tolerance and concurrency as a prime feature\cite{armstrong_concurrent_1993}.
 The Scala language claims to be scalable by being easily composable\cite{odersky_overview_????}.
 These and other features have made them popular languages amongst network oriented applications. % cite?
+These languages do not have a clear separation between pure and non-pure code so were less interesting for this report.
 \paragraph{A short introduction to Haskell}
-Haskell is a functional programming language that uses indentation to denote scopes. A simple example that shows off some of Haskell's basic features is shown below:
+A simple example that shows off some of Haskell's basic features is shown below:
 
 \begin{lstlisting}[caption={Fibonacci}]
 -- Returns the n-th number in the Fibonacci sequence
@@ -29,19 +30,38 @@ fib n = a + b
     b = fib (n-2)
 \end{lstlisting}
 
-The first line in this code snippet is commented since it is prefixed with --. Haskell also allows block comments beginning with {- and ending with -}.
-The second line is the type signature of the fib function. This is optional but recommended, if it is omitted the types are inferred from the function body. In this case the function is explicitly defined as taking a single integer as a parameter, and returning a single integer as the result.
-The third and fourth lines are two of the three partial implementations of the fib function.  The parameter is restricted to the values 0 and 1 respectively, and their implementations are what follows after the =, to return 1 as a base case of the function.
+The first line in this code snippet is a comment since it is prefixed with \lstinline{--}. Haskell also allows block comments beginning with \{- and ending with -\}.
+
+The second line is the type signature of the fib function. This is optional but recommended, if it is omitted the types are inferred from the function body. In this case the function is explicitly defined as taking a single machine integer as a parameter, and returning a single integer as the result. 
+
+The function is defined in three clauses. It uses pattern matching to choose between the three. 
+The third and fourth lines are the first two clauses of the fib function. The parameter is restricted to the values 0 and 1 respectively, and their implementations are what follows after the '=': to return 1 as a base case of the function.
+
 The fifth line is the general case of the function. Here the parameter is unrestricted and given the name n. The implementation adds two values a and b, they are defined in the where block below the where keyword.
-Lines 7 and 8 define the a and b values to be the result of recursive calls to the fib function with the parameter diminished by one and two respectively.
+
+Lines 7 and 8 define the a and b values to be the result of recursive calls to the fib function with the parameter diminished by one and two respectively. They are executed in the scope of the where clause. This is denoted by indenting the lines deeper than the where keyword is indented.
+
+Below is an example of an algebraic type defined in Haskell:
+
+\begin{lstlisting}[caption={IP address type}]
+data IpAddress = IPv4 Word32 |
+                 IPv6 (Word32, Word32, Word32, Word32)
+\end{lstlisting}
+
+The keyword 'data' denotes the definition of an algebraic data type. Here 'IpAddress' is the name of the type we're defining.
+After the '=' operator follow the constructors of the type. An IpAddress here can either be constructed by 'IPv4' or by 'IPv6' which are separated by a '|'.
+After the constructor follows its parameters, in the case of IPv4 it is a single 32-bit word. In the case of IPv6 it is a tuple of four 32-bit words.
+
 \section{The network protocol}
 \paragraph{Why SCTP}
 The network protocol we will implement is SCTP.
 To test if the I/O styles are useable in practice the chosen network protocol must make heavy use of side effects that interact with eachother.
 We look to a transport layer protocol because these protocols deal with all the uncertain properties of transporting data over a network, abstracting them for a large part as a service to the application layer.
+
 A transport layer protocol deals with corrupt data, data that has been received out of order, data that is expected but never arrives, data that is late, data that is congested or congesting, data that is ill-intendedly constructed, data that is to be multiplexed or demultiplexed.
-SCTP deals with many of these things, to provide a more reliable data stream for the application layer.
-While SCTP deals with many of the same things as TCP does, and even a few more, its specification is quite a bit simpler and more modern, which is why it was chosen for this report.
+
+SCTP deals with all of these things, to provide a more reliable data stream for the application layer.
+While SCTP deals with all of the same things as TCP does, and even a few more, its specification is quite a bit simpler and more modern, which is why it was chosen for this report.
 \paragraph{A short introduction to SCTP}
 From the RFC4960\cite{_rfc_????}
 \begin{quotation}
@@ -52,7 +72,7 @@ SCTP is a reliable transport protocol operating on top of a
 
    \item acknowledged error-free non-duplicated transfer of user data
 
-   \item data fragmentation to conform to discovered path MTU size
+   \item data fragmentation to conform to discovered path maximum transmission unit size
 
    \item sequenced delivery of user messages within multiple streams, with
        an option for order-of-arrival delivery of individual user
@@ -65,9 +85,11 @@ SCTP is a reliable transport protocol operating on top of a
        at either or both ends of an association.
 \end{itemize}
 \end{quotation}
+Here an association is an established connection between peers over which data can be transferred. Multi-homing is the feature that allows an association to have more than one address at either end of the association. This makes the association tolerant to network failures where one or more of the peers fail, as long as there is at least one functional peer on either end of the connection.
 
 To set up an SCTP connection a handshake is performed. The connecting party sends a connection request to the listening party. The listening party creates a cookie with information about the connecting party and encrypts it with a secret key and sends it to the connecting party. The connecting party then echoes this cookie. The listening party decrypts the cookie, discovers that the connecting party really is committed to making the connection and then commits itself to the connection. This handshake makes sure the listening party does not commit resources to a connecting party before it is sure the connecting party has not spoofed its address.
 
 After the connection is set up the parties send eachother messages. These messages consist of a common header, containing the source and destination ports and a checksum, and one or more chunks. The chunks can be protocol messages like heartbeat, shutdown or data acknowledgement or they could be data messages as supplied by the application layer.
 
 The data messages are selectively acknowledged, this means an acknowledgement chunk can acknowledge multiple data fragments, even when they were received out of order or with gaps between them. A timer is kept for each sent data fragment when a fragment goes without acknowledgement for too long it is considered lost and will be retransmitted. 
+How long a system must wait before retransmitting a fragment is determined by a function that performs statistic analysis on round trip time measurements to make an estimate of the ideal retransmission time. 
