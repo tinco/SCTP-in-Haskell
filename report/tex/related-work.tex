@@ -7,3 +7,11 @@ Tackling the Awkward Squad is a tutorial that goes into the best practices of de
 
 \paragraph{Haskell in the Cloud\cite{epstein_haskell_????}}
 In this article a domain specific language is implemented in Haskell that emulates the way Erlang works for implementing distributed systems. The DSL makes it easy to create processes that communicate with eachother via messages over channels. The processes can be managed and monitored remotely with the goal of having great fault tolerance. 
+
+\paragraph{On the Expressiveness of Purely Functional I/O Systems\cite{Hudak89onthe}}
+In this report Hudak and Sundaresh explore properties of three I/O systems in Haskell.
+This was written before it the discovery of monads as a tool for establishing an I/O system.
+It explores the expressiveness of stream-based, continuation-based I/O and a third model called the systems model. In the systems model a representation of the initial system is passed along to each function that has a side effect, incrementally adding to its history. 
+
+The report goes on into showing these systems are equivalent in expresiveness, which means that any of these systems can be expressed in terms of any other of these three.
+It concludes that contrary to the popular belief at that time purely functional I/O can be both flexible and concise.

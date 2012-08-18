@@ -83,7 +83,7 @@ main =
 
 In this example the \lstinline!>>! chains together two actions, the \lstinline!>>=! operator does the same, but also makes the return value of the previous action available to the subsequent actions.
 
-Since this approach became very popular in the Haskell community it completely replaced the stream- and continuation-based approaches. A syntactic sugar was also introduced reducing the previous example to:
+This approach became so popular it became the de facto standard even before it replaced the stream- and continuation-based approach in the 1.3 release of Haskell\cite{haskell12to13}. A syntactic sugar was also introduced reducing the previous example to:
 
 \begin{lstlisting}[caption={Example of monadic I/O in Haskell}]
 main :: IO ()
