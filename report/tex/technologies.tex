@@ -41,6 +41,35 @@ The fifth line is the general case of the function. Here the parameter is unrest
 
 Lines 7 and 8 define the a and b values to be the result of recursive calls to the fib function with the parameter diminished by one and two respectively. They are executed in the scope of the where clause. This is denoted by indenting the lines deeper than the where keyword is indented.
 
+Below is an example of a function that takes multiple parameters, one of which is a function itself:
+
+\begin{lstlisting}[caption={The map function}]
+map :: (a -> b) -> [a] -> [b]
+map f [] = []
+map f (x : xs) = f x : (map f xs)
+\end{lstlisting}
+
+The first parameter of the map function has the type \lstinline{(a->b)}, this means it takes a function that takes a value of type a and returns a value of type b. 
+The lowercase types mean that they could be replaced by any type, so the function is generic in a and b.
+
+The map function takes a second argument, a list of values of type a, and returns a list of values of type b. 
+
+The implementation of this map function is recursive and like the fib function uses pattern matching to catch the base case, when the list is empty, it just returns the empty list.
+
+In the general case pattern matching is used in an interesting manner. The list parameter is destructured. In Haskell the colon sign is a list constructor, on its left side it has the first element of the list, on the right side a list with the rest of the elements. The pattern match makes use of this to give the first element and the rest of the elements separate names, x and xs.
+
+The function body itself is simple, the function parameter f is applied to the first element, and a list is constructed from it using the colon with on the right side the map function applied to the rest of the elements.
+
+One might wonder why the parameters are separated by arrows as were they return values too, this is because they actually are return values. This is illustrated in the next snippet. 
+
+\begin{lstlisting}[caption={The map function}]
+add :: Int -> [Int] -> [Int]
+add a = map (+a)
+\end{lstlisting}
+
+This function add takes a list of integers and adds an integer to each of them. It does this by returning the map function with only its first parameter supplied, the function parameter. This concept is called a curry, the map function with one parameter supplied is a function of the following type: \lstinline{[a] -> [b]}, a function that takes just the last parameter and returns the mapped over elements, in this case the types of a and b are restricted to Int by the add function.
+
+
 Below is an example of an algebraic type defined in Haskell:
 
 \begin{lstlisting}[caption={IP address type}]
@@ -51,6 +80,30 @@ data IpAddress = IPv4 Word32 |
 The keyword 'data' denotes the definition of an algebraic data type. Here 'IpAddress' is the name of the type we're defining.
 After the '=' operator follow the constructors of the type. An IpAddress here can either be constructed by 'IPv4' or by 'IPv6' which are separated by a '|'.
 After the constructor follows its parameters, in the case of IPv4 it is a single 32-bit word. In the case of IPv6 it is a tuple of four 32-bit words.
+
+To make accessing data in algebraic types a bit easier Haskell has a syntax sugar called record syntax. With this syntax it is possible to both define an algebraic type and accessors for its members like so:
+\begin{lstlisting}[caption={SCTP Common Header}]
+-- Every SCTP message has the following header
+data CommonHeader = CommonHeader {
+  sourcePortNumber :: PortNum,
+  destinationPortNumber :: PortNum,
+  verificationTag :: VerificationTag,
+  checksum :: Word32
+}
+\end{lstlisting}
+
+This code is expanded like so by the haskell compiler:
+
+\begin{lstlisting}[caption={SCTP Common Header}]
+data CommonHeader = CommonHeader PortNum PortNum
+                                 VerificationTag Word32
+sourcePortNumber :: CommonHeader -> PortNum
+sourcePortNumber (CommonHeader p _ _ _) = p
+-- .. etc ..
+\end{lstlisting}
+
+In this listing the sourcePortNumber takes a CommonHeader as a parameter and uses pattern matching to extract the portnumber. The underscores are don't care wildcards, and a disregarded in the pattern match.
+
 
 \section{The network protocol}
 \paragraph{Why SCTP}
