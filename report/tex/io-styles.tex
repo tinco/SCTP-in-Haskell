@@ -32,7 +32,7 @@ main ~(Success : ~((Str userInput) : ~(Success : ~(r4 : _))))
 	where (name : _) = lines userInput
 \end{lstlisting}
 
-In this listing the '~' operator is used to indicate lazy pattern matching. This means that Haskell will attempt to match only when the values of the pattern are to be evaluated. This allows the programmer to match on the return value of the requests he issues in the function itself, using them for the further actions within that function.
+In this listing the '\textasciitilde' operator is used to indicate lazy pattern matching, this means that Haskell will attempt to match only when the values of the pattern are to be evaluated. This allows the programmer to match on the return value of the requests he issues in the function itself, using them for the further actions within that function.
 
 \subsection{Continuation-based I/O}
 In Haskell's continuation based style the application is still modeled as a stream of inputs mapping to a stream of outputs, but the lazy pattern matching is replaced by continuations. Continuations are functions that are passed as arguments to request functions and are called with the response value as parameter. The following source code is an example of a continuation-based readFile method implemented using stream-based I/O.
@@ -67,7 +67,26 @@ letE x k = k x
 \end{lstlisting}
 
 \subsection{Monadic I/O}
-Sometime after Haskell's first release the relevance of monads to programming languages was discovered and in particular to functional programming languages. It was discovered that the monad could be used to express sequentially ordered computations. This proved to be ideal for expressing I/O. The I/O monad wraps any side-effect bearing function. This way an application returns an I/O monad which is unrolled by the operating system.
+Sometime after Haskell's first release the relevance of monads to programming languages was discovered and in particular to functional programming languages. It was discovered that the monad could be used to express sequentially ordered computations. This proved to be ideal for expressing I/O.
+
+Monads are a class of types for which two functions are defined, the first is the return function, which constructs a monad from a value.
+ The second is the bind function, it takes a monad, and a function that takes a value and returns a monad and returns a monad.
+The bind function has the \lstinline{>>=} operator in Haskell.
+ This is a bit abstract, but amongst other things the monad can be used to model a sequence of computations like this:
+
+\begin{lstlisting}[caption={Sequence of computations monad}]
+data Monad a = M a
+return :: a -> Monad a
+return x = M x
+(>>=) :: (Monad a) -> (a -> Monad b) -> Monad b
+(>>=) (M x) f = f x
+\end{lstlisting}
+
+In this implementation the bind function does nothing but unwrap its parameter value, taking it from the monad, and call the function with it.
+A monad is constructed by chaining monadic functions, functions that return a monad, together using the bind function. Since each monadic function takes an unwrapped value as a parameter and returns a wrapped value it is guaranteed that when unwrapping a monad every function in the chain is evaluated in sequential order.
+
+The I/O monad makes handy use of this property. This guaranteed ordering makes it safe to reason about functions that have side effects, as long as they are in the IO monad. 
+A token which represents the state of the world along from one monadic function to the next.
 
 \begin{lstlisting}[caption={Example of monadic I/O in Haskell}]
 main :: IO ()
