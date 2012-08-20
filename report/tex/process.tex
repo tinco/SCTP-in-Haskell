@@ -1,5 +1,6 @@
 \chapter{Process}
-TODO inleiding voor hoofdstuk
+In this chapter the process of exploring the different I/O styles is laid out. The first section explains the approach and an analysis of the I/O primitives required for implementing the protocol.
+
 \section{Approach}
 To explore different styles we have implemented the foundations of the SCTP protocol\cite{_rfc_????} in Haskell. The implementations yield valuable insight into which I/O functions are used and how they interact with eachother.
 To make implementing the different I/O styles a simple and fast process we have made a clear separation between pure and I/O functions. All non-I/O functions have been extracted into utility functions and placed into different files so they can be reused by the different implementations. This clear separation also allows us to clearly see what I/O actions are performed by each function, without distractions by complex pure functions.
@@ -15,6 +16,22 @@ deserializeMessage bytes = Message header chunks
         chunks = deserializeChunks $
             BL.fromChunks [chunk_bytes]
 \end{lstlisting}
+
+During the implementation the need for the following I/O actions was discovered:
+
+\begin{itemize}
+
+\item To receive and send data, the basic receiving and sending actions are performed.
+
+\item To allow for multiple sockets to be created on the stack from different threads, their state needs to be concurrently accessible through some concurrency primitives like acquiring and waiting for locks.
+
+\item In cases of network or hardware failure exceptions are generated that must be caught and handled. Also when these failures are not reported but are noticeable through data corruption.
+
+\item To get information from the system like the time or a free portnumber foreign function calls must be made.
+\end{itemize}
+
+These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. 
+As we suspected the network protocol implementation really covers all of the I/O types.
 \section{Monadic Style}
 \paragraph{Architecture}
 The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler is called with the relevant data.
@@ -78,7 +95,7 @@ socketAcceptMessage socket address message = do
 \end{lstlisting}
 
 Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted.
-The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks wether enough time has passed. If it has then it calls whatever function has been assigned to it. 
+The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether enough time has passed. If it has then it calls whatever function has been assigned to it. 
 
 \begin{lstlisting}[caption={The init retransmission function}]
 initRetransmit :: Association -> Message -> Integer -> IO ()
@@ -112,7 +129,7 @@ Since implementation has a clear separation between pure and I/O functions we ca
 \item To allow the application interface to have side effects, the event handler is also an IO function.
 \end{itemize}
 
-These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. As we suspected the network protocol implementation really covers all of the I/O types.
+% The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. 
 
 Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code,  would not have been reaped.
 
@@ -181,7 +198,7 @@ One I/O implementation specific detail that leaks into the otherwise pure types 
 \section{Stream-based style}
 \paragraph{Implementation}
 Since the old way of stream-based I/O is no longer built into the modern Haskell compilers an implementation of stream-based I/O in terms of the I/O monad was made for the exploration of the stream-based style.
-In the old Haskell style the responses in the inputstream arrived in the same order they were requested. Although this allowed for convenient lazy pattern matching, it also meant that either the operating system had to execute every I/O action sequentially, or had to reorder the actions regardless of wether the order of the results was of importance. For our new stream-based I/O system the decision was made to not reorder the events, instead passing them through in the order they are returned.
+In the old Haskell style the responses in the inputstream arrived in the same order they were requested. Although this allowed for convenient lazy pattern matching, it also meant that either the operating system had to execute every I/O action sequentially, or had to reorder the actions regardless of whether the order of the results was of importance. For our new stream-based I/O system the decision was made to not reorder the events, instead passing them through in the order they are returned.
 The programmer writing a program using this system defines a handler function that gets called for each event with the previous state, and returns a new state and a list of actions to be performed.
 \begin{lstlisting}[caption={Stream-based example}]
 handler 0 StartEvent =

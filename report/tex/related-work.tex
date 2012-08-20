@@ -3,10 +3,14 @@
 In this chapter we will talk about some of the research done in this field that is related to this report.
 
 \paragraph{Tackling the Awkward Squad\cite{Jones02tacklingthe}}
-Tackling the Awkward Squad is a tutorial that goes into the best practices of dealing with the different kinds of side effects a Haskell application might need using the I/O monad. It shows for each kind of side effect which primitives can be used.
+Tackling the Awkward Squad is a tutorial that goes into the best practices of dealing with the different kinds of side effects a Haskell application might need using the I/O monad. It shows for each kind of side effect which primitives can be used. As such it is a good reference for a researcher interested in developing alternative ways of dealing with I/O in a purely functional programming langue like Haskell.
 
-\paragraph{Haskell in the Cloud\cite{epstein_haskell_????}}
-In this article a domain specific language is implemented in Haskell that emulates the way Erlang works for implementing distributed systems. The DSL makes it easy to create processes that communicate with eachother via messages over channels. The processes can be managed and monitored remotely with the goal of having great fault tolerance. 
+Should the stream-based approach as described be developed into a fully fledged I/O system for Haskell then a tutorial like this should also be developed, perhaps citing the examples from the tutorial to aid developers that are used to the monadic style learn the stream-based style.
+
+\paragraph{Towards Haskell in the Cloud\cite{epstein_haskell_????}}
+In this article a domain specific language(DSL) is implemented in Haskell that emulates the way Erlang works for implementing distributed systems. The DSL makes it easy to create processes that communicate with eachother via messages over channels. The processes can be managed and monitored remotely with the goal of having great fault tolerance. 
+
+It might be interesting to combine the notion of a fault tolerant distributed system with the stream-based I/O style described in this report. Since in the stream-based approach requests are less tightly coupled to their responses making the system run in a distributed configuration like the one proposed in Haskell in the Cloud could work out very well.
 
 \paragraph{On the Expressiveness of Purely Functional I/O Systems\cite{Hudak89onthe}}
 In this report Hudak and Sundaresh explore properties of three I/O systems in Haskell.
@@ -15,3 +19,8 @@ It explores the expressiveness of stream-based, continuation-based I/O and a thi
 
 The report goes on into showing these systems are equivalent in expresiveness, which means that any of these systems can be expressed in terms of any other of these three.
 It concludes that contrary to the popular belief at that time purely functional I/O can be both flexible and concise.
+
+\paragraph{Lightweight concurrency primitives for GHC \cite{lw-concurrency}}
+In this paper a new set of concurrency primitives is proposed. Where before most of Haskell's concurrency primitives and the light-weight thread scheduler were written in C these can now be implemented in terms of these new concurrency primitives. This reduces the amount of C code written in the Haskell runtime system, makes it more loosely coupled and safer and easier to extend.
+The proposed concurrency primitives use transactional memory and continuations to achieve these properties. For further research in a continuation based I/O system inspiration could be found in this paper. 
+--TODO dit is niet heel netjes
