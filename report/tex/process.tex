@@ -2,10 +2,10 @@
 In this chapter the process of exploring the different I/O styles is laid out. The first section explains the approach and an analysis of the I/O primitives required for implementing the protocol.
 
 \section{Approach}
-To explore different styles the foundations of the SCTP protocol\cite{_rfc_????} are implemented in Haskell using these styles, features like multi-homing and the heartbeat were omitted because they were not essential for the goal of the research. The implementations yield valuable insight into which I/O functions are used and how they interact with eachother.
+To explore different styles the foundations of the SCTP protocol\cite{_rfc_????} are implemented in Haskell using these styles, features like multi-homing and the heartbeat were omitted because they were not essential for the goal of the research. The implementations yield valuable insight into which I/O functions are used and how they interact with each other.
 To make implementing the different I/O styles a simple and fast process a clear separation has been made between pure and I/O functions. All non-I/O functions have been extracted into utility functions and placed into different files so they can be reused by the different implementations. This clear separation also allows clear vision on what I/O actions are performed by each function, without distractions by complex pure functions.
 
-Another benefit of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell has a quickcheck\cite{Claessen_2000} function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function easy to do. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
+Another benefit of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell has a QuickCheck\cite{Claessen_2000} function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function easy to do. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
 
 Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code, would not have been reaped.
 
@@ -31,7 +31,7 @@ During the implementation the need for the following I/O actions was discovered:
 
 \item In cases of network or hardware failure exceptions are generated that must be caught and handled. Also when these failures are not reported but are noticeable through data corruption.
 
-\item To get information from the system like the time or a free portnumber foreign function calls must be made.
+\item To get information from the system like the time or a free port number foreign function calls must be made.
 \end{itemize}
 
 These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. 
@@ -40,7 +40,7 @@ This confirms the idea that the network protocol implementation is a good subjec
 \subsection{Architecture}
 The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler\ref{lst-eventhandler} is called with the relevant data. The event handler was supplied by the interfacing program during the creation of the socket.
 
-\begin{lstlisting}[caption={The eventhandler is called when a payload is received},label={lst-eventhandler}]
+\begin{lstlisting}[caption={The event handler is called when a payload is received},label={lst-eventhandler}]
 handlePayload :: Association -> Payload -> IO(Association)
 handlePayload association@Association{..} payload = do 
     acknowledge association payload
@@ -103,7 +103,7 @@ socketAcceptMessage socket address message = do
                     processOnSocket socket tag toProcess
 \end{lstlisting}
 
-Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. A timer is constructed with a time goal. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted.
+Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. A timer is constructed with a time goal. If an acknowledgment of the connection attempt is not received before the timer runs out the attempt is retransmitted.
 The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether the goal time has passed. If it has then it calls the function that has been assigned to it, in this case the retransmission function\ref{lst-retransmission}.
 
 \begin{lstlisting}[caption={The init retransmission function}, label={lst-retransmission}]
@@ -128,8 +128,8 @@ initRetransmit association message attempt = do
     timer = associationTimer association
     timeOut = associationTimeOut association
 \end{lstlisting}
-Because timers run in a separate thread that runs concurrently with the packet receiving thread and both threads modify the state of associations the need for threadsafe communication of state arises. 
-A simple way of threadsafe communication in Haskell is by using the MVar.
+Because timers run in a separate thread that runs concurrently with the packet receiving thread and both threads modify the state of associations the need for thread-safe communication of state arises. 
+A simple way of thread-safe communication in Haskell is by using the MVar.
 It represents a mutable variable that can be taken and put back with an IO operation.
 When the variable is taken, access to the variable is atomically blocked for other threads until the variable is put back. 
 
@@ -139,7 +139,7 @@ The timers themselves are also stored in an MVar so they can be accessed by the 
 Since implementation has a clear separation between pure and I/O functions it is easy to see what I/O actions are performed by each function. 
 
 \begin{itemize}
-\item To receive and send data, an operating system socket is created and the sendTo and recvFrom functions are called. Whenever a new socket is created a portnumber is also requested from the operating system.
+\item To receive and send data, an operating system socket is created and the sendTo and recvFrom functions are called. Whenever a new socket is created a port number is also requested from the operating system.
 \item To allow for multiple sockets to be created on the stack, a separate thread is spawned and the list of sockets is stored in an MVar.
 \item To allow for timed events, network events and application events to affect an association, associations are stored in an MVar and timers are run in separate threads.
 \item To create a cookie the getCurrentTime is called. The timers call getCPUTime for small grained timing.
@@ -153,7 +153,7 @@ Since implementation has a clear separation between pure and I/O functions it is
 
 The implementation looks a lot like it would in any regular imperative language\ref{lst-imperative}, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
 
-A possible disadvantage is that it might distract the programmer of one of the merits of the functional programming language, the philosophy of composing reusable functions. A pure function needs to be lifted into the monad to be compatible, hindering the composeability and cluttering the expressions.
+A possible disadvantage is that it might distract the programmer of one of the merits of the functional programming language, the philosophy of composing reusable functions. A pure function needs to be lifted into the monad to be compatible, hindering the composability and cluttering the expressions.
 
 \begin{lstlisting}[caption={The connect function looks imperative}, label={lst-imperative}]
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO Socket
@@ -303,7 +303,7 @@ handler s@(Established listenAddress sock sockets hs)
 
 The second and third are the listen and connect events, they indicate that an interfacing program wants to create a socket. The socket is created and added to the state.
 
-All other events, like timer events, requested random values and portnumbers, are passed through two sets of handlers\ref{lst-dispatching}. The first set is the handlers of sockets that are being created, the second set is the handlers of established sockets. An event is tested on each handler until a handler accepts it, when it accepts it it returns a new state and a list actions and the handler is removed from the list of handlers.
+All other events, like timer events, requested random values and port numbers, are passed through two sets of handlers\ref{lst-dispatching}. The first set is the handlers of sockets that are being created, the second set is the handlers of established sockets. An event is tested on each handler until a handler accepts it, when it accepts it it returns a new state and a list actions and the handler is removed from the list of handlers.
 
 \begin{lstlisting}[caption={Dispatching to handlers},label={lst-dispatching}]
 handler s@(Established l sock sockets handlers) event =
@@ -343,7 +343,7 @@ To contrast the stream-based style with the monadic style the analysis of the st
 \subsubsection{Advantages}
 An advantage to the stream-based style is that the I/O is executed concurrently by default. For example the handleInit function performs 3 I/O actions in parallel\ref{lst-stream-init}: getting two random integers and the current time from the operating system. 
 
-The monadic counterpart of this function performs these functions sequentially as there is no way of telling if these functions are dependant on each other.
+The monadic counterpart of this function performs these functions sequentially as there is no way of telling if these functions are dependent on each other.
 
 Depending on the resources this might significantly speed up the function though in this case it is unlikely as the cost of writing and reading from the events channel three times is probably more expensive than the usually rather immediate RandomInteger, if a seed has already been generated, and GetTime actions. 
 

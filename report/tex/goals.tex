@@ -1,11 +1,11 @@
 \chapter{Goals}
 \section{Exploration}
 This report explores several programming techniques that can be used to deal with the input, output and other side effects that occur when implementing a network protocol in a functional programming language.
-These I/O techniques are a combination of functions and datastructures that embed the notion of side effects into an otherwise pure language, pure here meaning free from side effects.
+These I/O techniques are a combination of functions and data structures that embed the notion of side effects into an otherwise pure language, pure here meaning free from side effects.
 % From this exploration we attempt to discover which technique and/or syntax is most suited for network protocol implementation.
 The exploration is done by implementing a network protocol using each of these techniques and analyzing the advantages and disadvantages of using each technique for the implementation of the network protocol.
 
-For the exploration to have any bearing on network protocols in general a network protocol is selected that is stateful and does not rely on the layers underneath it for reliable data transfer and as such has a superset of features over most protocols. 
+For the exploration to have any bearing on network protocols in general a network protocol is selected that is stateful and does not rely on the layers underneath it for reliable data transfer and as such has a super-set of features over most protocols. 
 
 A network protocol like this has many features that introduce side effects in its implementations such as timers and timeouts, concurrency, randomness and state.
 The exploration goal is to find out how the different I/O techniques deal with these interactions.
@@ -15,4 +15,4 @@ The exploration goal is to find out how the different I/O techniques deal with t
 % Correctness lastly tells us to what amount the code follows the specification exactly, does the implementation pose any extra limitations or leave room for extra undescribed behavior?
 
 \section{Comparing techniques}
-Once all different techniques have been explored, the report aims to compare the techniques to eachother to see if a universally superior technique can be determined.
+Once all different techniques have been explored, the report aims to compare the techniques to each other to see if a universally superior technique can be determined.

@@ -5,7 +5,7 @@ It starts with the Haskell programming language, and then goes into the SCTP net
 
 \section{The functional language}
 \paragraph{Why Haskell}
-The programming language we are focussing on is Haskell.
+The programming language we are focusing on is Haskell.
 This language is of special interest because of several properties it has that makes it suitable for implementing a network protocol.
 First of all Haskell aims to be an as pure program language as possible. This makes it harder to achieve side effects which are important to a network protocol, but it does simplify algorithms and makes it easier to verify correctness when comparing the implementation to a specification.
 In the currently most popular implementation of Haskell side effects are introduced by executing them in a so called Monad.
@@ -13,7 +13,7 @@ How this works will be explained in a later chapter.
 % When code is free of side effects the amount of bugs that can occur in that code is significantly reduced.
 The absence of side effects in pure Haskell makes it easier to understand complex behaviour and even prove that code follows contracts.
 This aids greatly when implementing network protocols which usually are well specified and follow strict contracts.
-That Haskell features memory management and immutable data also improves the security of the implementation by moving the responsibility of protecting from buffer overruns and other unintended state manipulation to the runtime system, which has been thorougly battle tested.
+That Haskell features memory management and immutable data also improves the security of the implementation by moving the responsibility of protecting from buffer overruns and other unintended state manipulation to the runtime system, which has been thoroughly battle tested.
 
 Other functional programming languages also have interesting properties.
 Erlang for example claims to be a language with fault tolerance and concurrency as a prime feature\cite{armstrong_concurrent_1993}.
@@ -96,7 +96,7 @@ data CommonHeader = CommonHeader {
 }
 \end{lstlisting}
 
-This code is expanded like so by the haskell compiler:
+This code is expanded like so by the Haskell compiler:
 
 \begin{lstlisting}[caption={SCTP Common Header}]
 data CommonHeader = CommonHeader PortNum PortNum
@@ -106,13 +106,13 @@ sourcePortNumber (CommonHeader p _ _ _) = p
 -- .. etc ..
 \end{lstlisting}
 
-In this listing the sourcePortNumber takes a CommonHeader as a parameter and uses pattern matching to extract the portnumber. The underscores are don't care wildcards, and a disregarded in the pattern match.
+In this listing the sourcePortNumber takes a CommonHeader as a parameter and uses pattern matching to extract the port number. The underscores are don't care wild cards, and a disregarded in the pattern match.
 
 
 \section{The network protocol}
 \paragraph{Why SCTP}
 The network protocol we will implement is SCTP.
-To test if the I/O styles are useable in practice the chosen network protocol must make heavy use of side effects that interact with eachother.
+To test if the I/O styles are usable in practice the chosen network protocol must make heavy use of side effects that interact with each other.
 We look to a transport layer protocol because these protocols deal with all the uncertain properties of transporting data over a network, abstracting them for a large part as a service to the application layer.
 
 A transport layer protocol deals with corrupt data, data that has been received out of order, data that is expected but never arrives, data that is late, data that is congested or congesting, data that is ill-intendedly constructed, data that is to be multiplexed or demultiplexed.
@@ -123,7 +123,7 @@ While SCTP deals with all of the same things as TCP does, and even a few more, i
 From the RFC4960\cite{_rfc_????}
 \begin{quotation}
 SCTP is a reliable transport protocol operating on top of a
-   connectionless packet network such as IP.  It offers the following
+   connection-less packet network such as IP.  It offers the following
    services to its users:
 \begin{itemize}
 
@@ -146,7 +146,7 @@ Here an association is an established connection between peers over which data c
 
 To set up an SCTP connection a handshake is performed. The connecting party sends a connection request to the listening party. The listening party creates a cookie with information about the connecting party and encrypts it with a secret key and sends it to the connecting party. The connecting party then echoes this cookie. The listening party decrypts the cookie, discovers that the connecting party really is committed to making the connection and then commits itself to the connection. This handshake makes sure the listening party does not commit resources to a connecting party before it is sure the connecting party has not spoofed its address.
 
-After the connection is set up the parties send eachother messages. These messages consist of a common header, containing the source and destination ports and a checksum, and one or more chunks. The chunks can be protocol messages like heartbeat, shutdown or data acknowledgement or they could be data messages as supplied by the application layer.
+After the connection is set up the parties send each other messages. These messages consist of a common header, containing the source and destination ports and a checksum, and one or more chunks. The chunks can be protocol messages like heartbeat, shutdown or data acknowledgment or they could be data messages as supplied by the application layer.
 
-The data messages are selectively acknowledged, this means an acknowledgement chunk can acknowledge multiple data fragments, even when they were received out of order or with gaps between them. A timer is kept for each sent data fragment when a fragment goes without acknowledgement for too long it is considered lost and will be retransmitted. 
+The data messages are selectively acknowledged, this means an acknowledgment chunk can acknowledge multiple data fragments, even when they were received out of order or with gaps between them. A timer is kept for each sent data fragment when a fragment goes without acknowledgment for too long it is considered lost and will be retransmitted. 
 How long a system must wait before retransmitting a fragment is determined by a function that performs statistic analysis on round trip time measurements to make an estimate of the ideal retransmission time. 

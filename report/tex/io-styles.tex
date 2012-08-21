@@ -1,7 +1,7 @@
 \chapter{I/O}
 Eventually in every network protocol implementation data has to been sent to and received from the underlying stack.
-The content of the received data is not necessarily what is expected and the underlaying stack most certainly has side effects.
-How the langague deals with these impurities influences its expressiveness and complexity.
+The content of the received data is not necessarily what is expected and the underlying stack most certainly has side effects.
+How the language deals with these impurities influences its expressiveness and complexity.
 It can even influence the architecture of the network protocol implementation.
 Communication with the underlying stack usually is done using the I/O libraries and syntax of the language.
 This is why in this chapter we will first explore their basic functionality.
@@ -72,7 +72,7 @@ Sometime after Haskell's first release the relevance of monads to programming la
 Monads are a class of types for which two functions are defined, the first is the return function, which constructs a monad from a value.
  The second is the bind function, it takes a monad, and a function that takes a value and returns a monad and returns a monad.
 The bind function has the \lstinline{>>=} operator in Haskell.
- This is a bit abstract, but amongst other things the monad can be used to model a sequence of computations like this:
+ This is a bit abstract, but among other things the monad can be used to model a sequence of computations like this:
 
 \begin{lstlisting}[caption={Sequence of computations monad}]
 data Monad a = M a

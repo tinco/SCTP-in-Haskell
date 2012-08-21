@@ -5,7 +5,7 @@ The stream-based approach was deserted by the Haskell Committee and community be
 
 With the complexity comes an advantage, the distance provides us with effortless concurrency. Actions are executed in parallel by default in this implementation and the event loop reliefs the programmer of worrying about the details of safe concurrent I/O. 
 
-But when implementating the SCTP network protocol this advantage is not exploited as the I/O actions required are not particularily expensive.
+But when implementing the SCTP network protocol this advantage is not exploited as the I/O actions required are not particularly expensive.
 Forcing every action to be performed in a different thread also has penalties. The locks used to achieve the sequencing have a significant overhead which could shadow the time gained in executing the I/O concurrently.
 
 The event channel style could be used in the monadic style too, by using a library that defines the functions, but since it is not part of the runtime system some responsibility would still lie with the programmer, reducing the effort but not making it effortless.
