@@ -16,15 +16,15 @@ instance Eq (Eventer e) where
 handlerLoop :: (Action a e, Event e) => s -> Handler a e s -> IO (Eventer e)
 handlerLoop startState handler = do
     events <- newChan
-    forkIO $ eventLoop handler events startState startEvent
+    forkIO $ handlerLoop' handler events startState startEvent
     return $ writeChan events
 
-eventLoop :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO ()
-eventLoop handler events s event = do
+handlerLoop' :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO ()
+handlerLoop' handler events s event = do
     let (s', actions) = handler s event
     mapM_ (\a -> forkIO $ handleIO (writeChan events) a) actions
     let stop = stopAction `elem` actions
-    unless stop $ eventLoop handler events s' =<< readChan events
+    unless stop $ handlerLoop' handler events s' =<< readChan events
     return ()
 
 class Event e where

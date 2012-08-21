@@ -7,6 +7,8 @@ To make implementing the different I/O styles a simple and fast process a clear 
 
 Another benefit of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell has a quickcheck\cite{Claessen_2000} function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function easy to do. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
 
+Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code, would not have been reaped.
+
 \begin{lstlisting}[caption={An example of a shared pure function}, label={lst:shared}]
 deserializeMessage :: ByteString -> Message
 deserializeMessage bytes = Message header chunks
@@ -35,7 +37,7 @@ During the implementation the need for the following I/O actions was discovered:
 These actions cover the four categories of the awkward squad \cite{jones_tackling_2009}. 
 This confirms the idea that the network protocol implementation is a good subject to test the I/O styles in.
 \section{Monadic Style}
-\paragraph{Architecture}
+\subsection{Architecture}
 The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler\ref{lst-eventhandler} is called with the relevant data. The event handler was supplied by the interfacing program during the creation of the socket.
 
 \begin{lstlisting}[caption={The eventhandler is called when a payload is received},label={lst-eventhandler}]
@@ -50,7 +52,7 @@ handlePayload association@Association{..} payload = do
 In the listings the pure functions are easily distinguishable from the monadic functions, the pure functions are either prefixed by the keyword \lstinline{let} or are in a \lstinline{where} block. No monadic methods occur outside of do blocks.
 % Monadic methods are either by themselves on a line or assigned to a variable using the \lstinline{<-} operator.
 
-\paragraph{Operation}
+\subsection{Operation}
 The interfacing program first starts the stack, which is the interface to the SCTP protocol implementation that is normally run by the operating system. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket\ref{lst-stackloop}. Whenever a packet arrives it then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for and then calls the socketAcceptMessage function with that socket and the packet as parameters.
 
 \begin{lstlisting}[caption={The stack loop},label={lst-stackloop}]
@@ -73,11 +75,11 @@ In this listing\ref{lst-stackloop} \lstinline{NSB.recvFrom} is an alias for \lst
 
 The interfacing application can register a socket at the stack by either calling the 'connect' or 'listen' function with an address and an event handler function as parameters.
 
-The 'socketAcceptMessage' function checks and decodes the message and calls the handle function for that particular type of the message. The handler functions perform actions like creating associations, transferring data and tearing associations down. An association here represents a connection between two peers.
+The 'socketAcceptMessage' function checks and decodes the message and calls the handle function for that particular type of the message\ref{lst-socketacceptmessage}. The handler functions perform actions like creating associations, transferring data and tearing associations down. An association here represents a connection between two peers.
 
 When an action is performed that the interfacing application could be interested in, such as an incoming connection or received data, the event handler the application registered is called with an event object containing relevant information.
 
-\begin{lstlisting}[caption={socketAcceptMessage decides what to do with a message}]
+\begin{lstlisting}[caption={socketAcceptMessage decides what to do with a message},label={lst-socketacceptmessage}]
 socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
 socketAcceptMessage socket address message = do
     (eventhandler socket) (OtherEvent message)
@@ -133,7 +135,7 @@ When the variable is taken, access to the variable is atomically blocked for oth
 
 The timers themselves are also stored in an MVar so they can be accessed by the message receiving thread and cancelled when a message is received that does not need to be retransmitted.
 
-\paragraph{Analysis}
+\subsection{Analysis}
 Since implementation has a clear separation between pure and I/O functions it is easy to see what I/O actions are performed by each function. 
 
 \begin{itemize}
@@ -147,14 +149,11 @@ Since implementation has a clear separation between pure and I/O functions it is
 
 % The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. 
 
-Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code, would not have been reaped.
-
-
 % JK: Inleiding begint met voordelen van Haskell, wat is daar van over?
 
 The implementation looks a lot like it would in any regular imperative language\ref{lst-imperative}, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
 
-A possible disadvantage is that it might distract the programmer of one of the merits of the functional programming language, the philosophy of composing functions rather than sequencing actions, wasting Haskell's facilities for function composition. 
+A possible disadvantage is that it might distract the programmer of one of the merits of the functional programming language, the philosophy of composing reusable functions. A pure function needs to be lifted into the monad to be compatible, hindering the composeability and cluttering the expressions.
 
 \begin{lstlisting}[caption={The connect function looks imperative}, label={lst-imperative}]
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO Socket
@@ -186,9 +185,9 @@ connect stack peerAddr eventhandler = do
     return socket
 \end{lstlisting}
 
-One I/O implementation specific detail that leaks into the otherwise pure types is the concurrent state primitive MVar. The the association has an MVar member which allows both the data receiving thread and the timers to mutate its state safely. Ideally the association would not be contaminated with this implementation specific information.
+One I/O implementation specific detail that leaks into the otherwise pure types is the concurrent state primitive MVar. The association has an MVar member which allows both the data receiving thread and the timers to mutate its state safely. Ideally the association would not be contaminated with this implementation specific information.
 
-%\paragraph{Conclusion}
+%\subsection{Conclusion}
 
 % -- why split I/O and pure
 % -- why eventhandler?
@@ -211,48 +210,65 @@ One I/O implementation specific detail that leaks into the otherwise pure types 
 % -- Haskell performance \cite{epstein_haskell_????}
 
 \section{Stream-based style}
-\paragraph{Implementation}
-Since the old way of stream-based I/O is no longer built into the modern Haskell compilers an implementation of stream-based I/O in terms of the I/O monad was made for the exploration of the stream-based style.
-In the old Haskell style the responses in the inputstream arrived in the same order they were requested. Although this allowed for convenient lazy pattern matching, it also meant that either the operating system had to execute every I/O action sequentially, or had to reorder the actions regardless of whether the order of the results was of importance. For the new stream-based I/O system the decision was made to not reorder the events, instead passing them through in the order they are returned.
-The programmer writing a program using this system defines a handler function that gets called for each event with the previous state, and returns a new state and a list of actions to be performed.
-\begin{lstlisting}[caption={Stream-based example}]
+\subsection{Implementation}
+Since the way of stream-based I/O as described in the history chapter is no longer built into the modern Haskell compilers an implementation of stream-based I/O in terms of the I/O monad was made for the exploration of the stream-based style.
+In the old Haskell style the responses to the requests arrive to the inputstream in the same order they are requested, meaning that the requests are evaluated sequentially. 
+Although this allows for convenient lazy pattern matching, which allows the programmer to give values that are not yet received, it also means that either the operating system has to execute every I/O action sequentially as they need to arrive in a predictable order, or when they are executed concurrently, has to reorder the actions regardless of whether the order of the results is of importance.
+
+For the stream-based I/O built for this report the decision was made to execute the requests concurrently, and pass the results to the input stream in the order they are returned.
+
+The programmer writing a program using this system defines a handler function that gets called for each event in the inputstream, and returns a list of actions to be performed next.
+
+Along with the requests and responses a state is also passed along. The first event gets passed along with an initial state, the second event is passed with the state resulting from the first event, and so on. A simple example is shown in the listing below\ref{lst-simple-stream}.
+
+\begin{lstlisting}[caption={Stream-based example},label={lst-simple-stream}]
 handler 0 StartEvent =
     (1, [ReadChan stdin])
 handler 1 [ReadResult result] =
     (1, [WriteChan stdout "Hello " ++ result ++ "!", Stop])
 \end{lstlisting}
-A set of basic I/O operations with their response events have also been implemented.
-To start processing the program calls the handlerLoop function with their handler function as a parameter.
-The handlerLoop function defines a channel and it listens on it for events. Whenever an event comes in the handler function is called with that event as a parameter along with the previous state. The handler function returns a list of actions that the handlerLoop executes in separate threads. 
-\begin{lstlisting}[caption={The eventLoop}]
-eventLoop :: (Action a e, Event e) =>
-    Handler a e s -> Chan e -> s -> e -> IO ()
-eventLoop handler events s event = do
+
+To start processing the program calls the handlerLoop function with their handler function as a parameter\ref{lst-handlerloop}.
+
+\begin{lstlisting}[caption={The handlerLoop}, label={lst-handlerloop}]
+handlerLoop :: (Action a e, Event e) => s -> Handler a e s -> IO (Eventer e)
+handlerLoop startState handler = do
+    events <- newChan
+    forkIO $ handlerLoop' handler events startState startEvent
+    return $ writeChan events
+
+handlerLoop' :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO ()
+handlerLoop' handler events s event = do
     let (s', actions) = handler s event
-    mapM_ (\a -> forkIO $
-        handleIO (writeChan events) a) actions
+    mapM_ (\a -> forkIO $ handleIO (writeChan events) a) actions
     let stop = stopAction `elem` actions
-    unless stop $
-        eventLoop handler events s' =<< readChan events
+    unless stop $ handlerLoop' handler events s' =<< readChan events
     return ()
 \end{lstlisting}
-The actions write their results wrapped in events to the channel. This allows all I/O do be performed concurrently.
-\begin{lstlisting}[caption={Example of an Action, SendUdpMessage}]
+
+The handlerLoop function defines a channel and it listens on it for events. Whenever an event comes in the handler function is called with that event as a parameter along with the previous state. The handler function returns a list of actions that the handlerLoop executes in separate threads. 
+
+The actions write their results wrapped in events to the channel. This results in all I/O being performed concurrently, and their results passed to the handler function sequentially.
+When I/O needs to be performed sequentially the programmer dispatches the second I/O request after the first has returned.
+
+A set of basic I/O operations with their response events have been implemented\ref{lst-action}.
+
+\begin{lstlisting}[caption={Example of an Action, SendUdpMessage}, label={lst-action}]
 handleIO eventer (SendUdpMessage sock bytes addr) = do
     n <- NSB.sendTo sock bytes addr
     eventer $ SentUdpMessage n
 \end{lstlisting}
-\paragraph{Architecture}
+\subsection{Architecture}
 Like in the monadic style, the architecture of the stream-based implementation is based around an event handler. A single thread waits for incoming data and timer events, when an event is relevant to the interfacing program it is notified by emitting an event to the event handler of the socket that handled the event.
 \begin{lstlisting}[caption={The payload handler}]
 \end{lstlisting}
 
-\paragraph{Operation}
+\subsection{Operation}
 The SCTP handler starts with the Setup state, from which it sets up an operating system socket and goes to the Established state. It then listens for three kinds of events.
 
-The first is the GotUdpMessage event that contains a newly received data packet. It deserializes the message, checks if it is valid and then passes it to socketAcceptMessage, which is similar to the monadic socketAcceptMessage.
+The first is the GotUdpMessage event that contains a newly received data packet. It deserializes the message, checks if it is valid and then passes it to socketAcceptMessage/ref{lst-gotmessage}, which is similar to the monadic socketAcceptMessage/ref{lst-socketacceptmessage}.
 
-\begin{lstlisting}[caption={The GotUdpMessage event handler}]
+\begin{lstlisting}[caption={The GotUdpMessage event handler},label={lst-gotmessage}]
 handler :: IO.Handler Action Event State
 handler s@(Setup address) Begin =
     (s, [MakeUdpSocket address])
@@ -282,9 +298,9 @@ handler s@(Established listenAddress sock sockets hs)
 
 The second and third are the listen and connect events, they indicate that an interfacing program wants to create a socket. The socket is created and added to the state.
 
-All other events are passed through two sets of handlers. The first set is the handlers of sockets that are being created, the second set is the handlers of established sockets. An event is tested on each handler until a handler accepts it, when it accepts it it returns a new state and a list actions and the handler is removed from the list of handlers.
+All other events, like timer events, requested random values and portnumbers, are passed through two sets of handlers\ref{lst-dispatching}. The first set is the handlers of sockets that are being created, the second set is the handlers of established sockets. An event is tested on each handler until a handler accepts it, when it accepts it it returns a new state and a list actions and the handler is removed from the list of handlers.
 
-\begin{lstlisting}[caption={Dispatching to handlers}]
+\begin{lstlisting}[caption={Dispatching to handlers},label={lst-dispatching}]
 handler s@(Established l sock sockets handlers) event =
     (Established l sock sockets' handlers', actions)
   where
@@ -312,14 +328,21 @@ handler s@(Established l sock sockets handlers) event =
             Nothing -> dispatchMap handlers sockets
 \end{lstlisting}
 
-As one can see the whole dispatching to handlers code is rather intricate. 
+As one can see the whole dispatching to handlers code is rather intricate. This complex function is needed because of there being just one state with one handler, the protocol implementation has many associations and sockets that all have their own state and their own requested events.
+When an event comes in on the inputstream it could be meant for any one of these handlers, so the lists of handlers must be iterated until a suitable handler is found. 
+When a suitable handler is found the event is consumed and result of the handler is passed on as the new state, and the new actions to be performed.
 
-\paragraph{Analysis}
-The first thing that stands out from this implementation is that there is a lot of code involved in dispatching events to handlers and correctly returning a new state with new handlers and actions. What makes the system fairly complex is that it has one handler that is the entry point of the application but it has many handlers in different places that events could be meant for. The idea of decoupling the request from the response this way has certainly moved a lot of complexity from the operating system to the programmer.
+\subsection{Analysis}
+To contrast the stream-based style with the monadic style the analysis of the stream-based style is composed of several advantages and disadvantages when compared to the monadic style.
 
-The obvious advantage to this is that it is per default concurrent. For example the handleInit function performs 3 I/O actions in parallel. The monadic counterpart of this function performs these functions sequentially. Depending on the resources this might significantly speed up the function though in this case it is unlikely as the cost of writing and reading from the channel three times is probably more expensive than the usually immediate RandomInteger and GetTime actions. 
+\subsubsection{Advantages}
+An advantage to the stream-based style is that the I/O is executed concurrently by default. For example the handleInit function performs 3 I/O actions in parallel\ref{lst-stream-init}: getting two random integers and the current time from the operating system. 
 
-\begin{lstlisting}[caption={The init handler}]
+The monadic counterpart of this function performs these functions sequentially as there is no way of telling if these functions are dependant on each other.
+
+Depending on the resources this might significantly speed up the function though in this case it is unlikely as the cost of writing and reading from the events channel three times is probably more expensive than the usually rather immediate RandomInteger, if a seed has already been generated, and GetTime actions. 
+
+\begin{lstlisting}[caption={The init handler}, label={lst-stream-init}]
 handleInit socket@ConnectSocket{} _ _ = (socket, [])
 handleInit socket@ListenSocket{..} address message =
     (socket', actions)
@@ -337,9 +360,19 @@ handleInit socket@ListenSocket{..} address message =
         destination = sockAddr (address, portnum)
 \end{lstlisting}
 
-The handleInit function makes use of a function called initAccumulator, this function accumulates the events returned by the action and passes them on to the handle function which uses them to construct the init response message.
+Something that has disappeared when comparing to the monadic style is the dealing with concurrency. Since concurrency has been abstracted away by the events the MVars were no longer necessary and all datastructures are clean from mutable state.
+Especially socketAcceptMessage, which had to deal with sockets in MVars in the monadic style has benefitted from this and is significantly simpler in the stream based implementation.
 
-\begin{lstlisting}[caption={The init handler}]
+\subsubsection{Disadvantages}
+The first thing that stands out from this implementation is that there is a lot of code involved in dispatching events to handlers and correctly returning a new state with new handlers and actions.
+What makes the main handler function so complex is that it has the responsibility to distribute events to the various handlers of the sockets and associations. 
+The idea of decoupling the request from the response this way has certainly moved a lot of complexity from the runtime system to the programmer. 
+
+This is a clear disadvantage, it could be mitigated by generalizing the code and offering helper functions or perhaps by making every socket and association have its own input stream, but it is an extra concern for the programmer that is not present in the monadic style.
+
+The handleInit function makes use of a function called initAccumulator\ref{lst-accumulator}, this function accumulates the events returned by the action and passes them on to the handle function which uses them to construct the init response message.
+
+\begin{lstlisting}[caption={The accumulator}, label={lst-accumulator}]
 accumulate acc handler state event = case acc event of
    Accumulated result -> Just (handler state result)
    Accumulating acc' -> Just (state {
@@ -361,6 +394,3 @@ initAccumulator' t = Accumulating (initAccumulator_ t)
 \end{lstlisting}
 
 It should be noted that the cumbersome accumulating of unordered events could possibly be reduced by introducing helper functions that employ type introspection or other metaprogramming to create syntactic sugar like was done for the monadic style. 
-
-Something that has disappeared when comparing to the monadic style is the dealing with concurrency. Since concurrency has been abstracted away by the events the MVars were no longer necessary and all datastructures are clean from mutable state.
-Especially socketAcceptMessage, which had to deal with sockets in MVars in the monadic style has benefitted from this and is significantly simpler in the stream based implementation.

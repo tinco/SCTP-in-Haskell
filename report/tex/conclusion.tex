@@ -1,11 +1,22 @@
 \chapter{Conclusion}
 Having implemented the SCTP protocol in both a monadic and a stream-based I/O style and having analyzed their advantages and disadvantages we can make recommendations based on their merits.
 
-The stream-based approach was deserted because the distance between actions and their responses. The problems this causes showed clearly in our implementation where a lot of complexity went into recombining the events with the handlers they were meant for. 
-The added complexity does have a merit though, it provides us with effortless concurrency. Actions are executed in parallel by default and the event loop makes sure we don't run into nasty race conditions.
+The stream-based approach was deserted by the Haskell Committee and community because the distance between actions and their responses. The problems this causes showed clearly in our implementation where a lot of complexity went into recombining the events with the handlers they were meant for. 
+The added complexity does have a merit though, it provides us with effortless concurrency. Actions are executed in parallel by default and the event loop reliefs the programmer of worrying about the details of safe concurrent I/O.
+
+In the implementation of the SCTP network protocol this property does not have much merit, as the I/O actions required are not particularily expensive.
+
+The event channel style could be used in the monadic style too, by using a library that defines the functions, but since it is not part of the runtime system some responsibility would still lie with the programmer, reducing the effort but not making it effortless.
+
 Forcing every action to be performed in a different thread does have its penalties though, it might cause more overhead on the CPU than the I/O delays warrant.
 
 The monadic I/O style is dominant in Haskell, which can probably be attributed to its ease of use. The binding operators of the monad allow the programmer to work on the results of actions right where the actions are called whilst still safely executing the actions in dictated order.
-The monad does not protect the programmer from concurrency problems more than any imperative programming language does, and requires the programmer to be explicit about concurrency. The concurrency primitives it offers are very easy to use but do introduce mutable state into the program.
 
-To further expand our knowledge of this domain we would suggest further research be done into the continuation passing style, which is another interesting I/O technique and in syntactic sugar for the stream-based style which might benefit greatly from reduced programming complexity.
+The monad does not fully protect the programmer from concurrency problems, but does require the programmer to be explicit about concurrency.
+	The concurrency primitives it offers are very easy to use but do introduce mutable state into the program, and puts the programmer at risk of making a mistake and leaving room for deadlocks or starvation.
+
+There is work being done on implementing software transactional memory and introducing new concurrency primitives for the monadic I/O system that reduce the risks of deadlocks significantly.
+
+Although stream-based I/O has some promising properties it looks like the Haskell Committee was right in deciding to replace it with the monadic style. Even when refreshing the style with some new features, the disadvantages of the stream-based style outweigh its advantages, at least in the implementation of the SCTP network protocol.
+
+To expand the knowledge of this domain further research could be done into the continuation passing style, which is another interesting I/O technique and in syntactic sugar for the stream-based style which might benefit greatly from reduced programming complexity and might work very well with the new concurrency primitives proposed.
