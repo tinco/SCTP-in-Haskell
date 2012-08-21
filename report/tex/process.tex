@@ -268,11 +268,36 @@ handler s@(Established listenAddress sock sockets hs)
 The second and third are the listen and connect events, they indicate that an interfacing program wants to create a socket. The socket is created and added to the state.
 
 All other events are passed through two sets of handlers. The first set is the handlers of sockets that are being created, the second set is the handlers of established sockets. An event is tested on each handler until a handler accepts it, when it accepts it it returns a new state and a list actions and the handler is removed from the list of handlers.
-\begin{lstlisting}[caption={This code is too ugly, needs to be refactored first}]
-.. TODO ..
+
+\begin{lstlisting}[caption={Dispatching to handlers}]
+handler s@(Established l sock sockets handlers) event =
+    (Established l sock sockets' handlers', actions)
+  where
+    (handlers', sockets', actions) = dispatch handlers []
+    dispatch [] hs_ = dispatchMap hs_ $ Map.toList sockets
+    dispatch (h:hs) hs_ = case h event of
+           Just (AResult (socket, actions)) ->
+               (hs_ ++ hs, sockets', actions)
+             where
+               sockets' = Map.insert k socket sockets
+               k = (ipAddress $ socketAddress socket,
+                   fromIntegral $ portNumber $
+                                  socketAddress socket)
+           Just (AHandler handler) ->
+               (handler:hs_ ++ hs, sockets, actions)
+           Nothing -> dispatch hs (h:hs_)
+    dispatchMap handlers [] = (handlers,sockets, [])
+    dispatchMap handlers ((k,socket):sockets) =
+        case socketHandler socket event of
+            Just (socket', actions) -> 
+                (handlers, sockets', actions)
+              where
+                sockets' = Map.insert k socket'
+                            (Map.fromList sockets)
+            Nothing -> dispatchMap handlers sockets
 \end{lstlisting}
 
-Timers have yet to be implemented.
+As one can see the whole dispatching to handlers code is rather intricate. 
 
 \paragraph{Analysis}
 The first thing that stands out from this implementation is that there is a lot of code involved in dispatching events to handlers and correctly returning a new state with new handlers and actions. What makes the system fairly complex is that it has one handler that is the entry point of the application but it has many handlers in different places that events could be meant for. The idea of decoupling the request from the response this way has certainly moved a lot of complexity from the operating system to the programmer.
@@ -284,31 +309,43 @@ handleInit socket@ConnectSocket{} _ _ = (socket, [])
 handleInit socket@ListenSocket{..} address message =
     (socket', actions)
   where
-    actions = [RandomInteger, RandomInteger, GetTime]
-    h (Nothing, Nothing, t) s (GotRandomInteger i) =
-        handle s (Just i, Nothing, t)
-    h (i, Nothing, t) s (GotRandomInteger j) =
-        handle s (i, Just j, t)
-    h (i, j, Nothing) s (Time t) =
-        handle s (i,j,Just t)
-    h _ _ _ = Nothing
-    handle s (Just i, Just j, Just t) = Just (s,actions)
-      where
-        portnum = fromIntegral $
-                    (sourcePortNumber.header) message
-        message' = makeInitResponse address
-                        message socketSecret t i j
-        actions = [socketSendMessage s destination message']
-        destination = sockAddr (address, portnum)
-    handle s t = Just (s {socketHandlers = [h t]}, [])
-
     socket' = socket { 
-        socketHandlers = (socketHandlers) ++
-                            [h (Nothing, Nothing, Nothing) ]
+        socketHandlers = (socketHandlers) ++ [acc]
     }
+    actions = [RandomInteger, RandomInteger, GetTime]
+    acc = initAccumulator handle
+    handle s (Just i, Just j, Just t) = (s,actions')
+      where
+        portnum = fromIntegral $ (sourcePortNumber.header) message
+        message' = makeInitResponse address message socketSecret t i j
+        actions' = [socketSendMessage s destination message']
+        destination = sockAddr (address, portnum)
 \end{lstlisting}
 
-It should be noted that the cumbersome accumulating of unordered events could possibly be reduced by introducing helper functions or even syntax sugar like was done for the monadic style. 
+The handleInit function makes use of a function called initAccumulator, this function accumulates the events returned by the action and passes them on to the handle function which uses them to construct the init response message.
+
+\begin{lstlisting}[caption={The init handler}]
+accumulate acc handler state event = case acc event of
+   Accumulated result -> Just (handler state result)
+   Accumulating acc' -> Just (state {
+        socketHandlers = socketHandlers state ++
+           [accumulate acc' handler]} ,[])
+   Skipped -> Nothing
+
+initAccumulator = accumulate (initAccumulator_ 
+                             (Nothing, Nothing, Nothing))
+initAccumulator_ (Nothing, Nothing, t) (GotRandomInteger i)=
+    initAccumulator' (Just i, Nothing, t)
+initAccumulator_ (i, Nothing, t) (GotRandomInteger j) =
+    initAccumulator' (i, Just j, t)
+initAccumulator_ (i, j, Nothing) (Time t) =
+    initAccumulator' (i,j,Just t)
+initAccumulator_ _ _ = Skipped
+initAccumulator' t@(Just _, Just _, Just _) = Accumulated t
+initAccumulator' t = Accumulating (initAccumulator_ t)
+\end{lstlisting}
+
+It should be noted that the cumbersome accumulating of unordered events could possibly be reduced by introducing helper functions that employ type introspection or other metaprogramming to create syntactic sugar like was done for the monadic style. 
 
 Something that has disappeared when comparing to the monadic style is the dealing with concurrency. Since concurrency has been abstracted away by the events the MVars were no longer necessary and all datastructures are clean from mutable state.
 Especially socketAcceptMessage, which had to deal with sockets in MVars in the monadic style has benefitted from this and is significantly simpler in the stream based implementation.
