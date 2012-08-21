@@ -20,6 +20,7 @@ import SCTP.Streams.Event
 import SCTP.Streams.Action
 import SCTP.Streams.State
 import SCTP.Streams.Types
+import SCTP.Streams.Utils
 
 handler :: IO.Handler Action Event State
 handler s@(Setup address) Begin = (s, [MakeUdpSocket address])
@@ -160,22 +161,17 @@ socketSendMessage socket address message =
 handleInit socket@ConnectSocket{} _ _ = (socket, [])
 handleInit socket@ListenSocket{..} address message = (socket', actions)
   where
+    socket' = socket { 
+        socketHandlers = (socketHandlers) ++ [acc]
+    }
     actions = [RandomInteger, RandomInteger, GetTime]
-    h (Nothing, Nothing, t) s (GotRandomInteger i) = handle s (Just i, Nothing, t)
-    h (i, Nothing, t) s (GotRandomInteger j) = handle s (i, Just j, t)
-    h (i, j, Nothing) s (Time t) = handle s (i,j,Just t)
-    h _ _ _ = Nothing
-    handle s (Just i, Just j, Just t) = Just (s,actions)
+    acc = initAccumulator handle
+    handle s (Just i, Just j, Just t) = (s,actions')
       where
         portnum = fromIntegral $ (sourcePortNumber.header) message
         message' = makeInitResponse address message socketSecret t i j
-        actions = [socketSendMessage s destination message']
+        actions' = [socketSendMessage s destination message']
         destination = sockAddr (address, portnum)
-    handle s t = Just (s {socketHandlers = [h t]}, [])
-
-    socket' = socket { 
-        socketHandlers = (socketHandlers) ++ [h (Nothing, Nothing, Nothing) ]
-    }
 
 handleCookieEcho socket@ConnectSocket{} _ _ = (socket,[])
 handleCookieEcho socket@ListenSocket{..} peerAddr message 
