@@ -1,16 +1,4 @@
 \chapter*{}
-\begin{quote}
-The Eight Fallacies of Distributed Computing\\
- 1. The network is reliable\\
- 2. Latency is zero\\
- 3. Bandwidth is infinite\\
- 4. The network is secure\\
- 5. Topology doesn't change\\
- 6. There is one administrator\\
- 7. Transport cost is zero\\
- 8. The network is homogeneous\\
---- \emph{Peter Deutsch}
-\end{quote}
 
-\section*{Summary}
-TODO
+\section*{Abstract}
+In this report an implementation of a stream-based I/O style is compared to the currently standard monadic I/O style in Haskell by implementing the network protocol SCTP in both styles. It finds the stream-based style still has some merits, but the monadic style remains superior for this use case. The distance between the I/O action and its result in the stream-based style is too much of a burden.

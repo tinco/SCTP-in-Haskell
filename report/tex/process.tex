@@ -231,18 +231,23 @@ handler 1 [ReadResult result] =
 To start processing the program calls the handlerLoop function with their handler function as a parameter\ref{lst-handlerloop}.
 
 \begin{lstlisting}[caption={The handlerLoop}, label={lst-handlerloop}]
-handlerLoop :: (Action a e, Event e) => s -> Handler a e s -> IO (Eventer e)
+handlerLoop :: (Action a e, Event e) =>
+                s -> Handler a e s -> IO (Eventer e)
 handlerLoop startState handler = do
     events <- newChan
-    forkIO $ handlerLoop' handler events startState startEvent
+    forkIO $ handlerLoop' handler events
+                          startState startEvent
     return $ writeChan events
 
-handlerLoop' :: (Action a e, Event e) => Handler a e s -> Chan e -> s -> e -> IO ()
+handlerLoop' :: (Action a e, Event e) =>
+                Handler a e s -> Chan e -> s -> e -> IO ()
 handlerLoop' handler events s event = do
     let (s', actions) = handler s event
-    mapM_ (\a -> forkIO $ handleIO (writeChan events) a) actions
+    mapM_ (\a -> forkIO $ handleIO 
+                          (writeChan events) a) actions
     let stop = stopAction `elem` actions
-    unless stop $ handlerLoop' handler events s' =<< readChan events
+    unless stop $ handlerLoop' handler events s' =<<
+                                 readChan events
     return ()
 \end{lstlisting}
 
@@ -260,13 +265,13 @@ handleIO eventer (SendUdpMessage sock bytes addr) = do
 \end{lstlisting}
 \subsection{Architecture}
 Like in the monadic style, the architecture of the stream-based implementation is based around an event handler. A single thread waits for incoming data and timer events, when an event is relevant to the interfacing program it is notified by emitting an event to the event handler of the socket that handled the event.
-\begin{lstlisting}[caption={The payload handler}]
-\end{lstlisting}
+%\begin{lstlisting}[caption={The payload handler}]
+%\end{lstlisting}
 
 \subsection{Operation}
 The SCTP handler starts with the Setup state, from which it sets up an operating system socket and goes to the Established state. It then listens for three kinds of events.
 
-The first is the GotUdpMessage event that contains a newly received data packet. It deserializes the message, checks if it is valid and then passes it to socketAcceptMessage/ref{lst-gotmessage}, which is similar to the monadic socketAcceptMessage/ref{lst-socketacceptmessage}.
+The first is the GotUdpMessage event that contains a newly received data packet. It deserializes the message, checks if it is valid and then passes it to socketAcceptMessage\ref{lst-gotmessage}, which is similar to the monadic socketAcceptMessage\ref{lst-socketacceptmessage}.
 
 \begin{lstlisting}[caption={The GotUdpMessage event handler},label={lst-gotmessage}]
 handler :: IO.Handler Action Event State
@@ -353,11 +358,13 @@ handleInit socket@ListenSocket{..} address message =
     actions = [RandomInteger, RandomInteger, GetTime]
     acc = initAccumulator handle
     handle s (Just i, Just j, Just t) = (s,actions')
-      where
-        portnum = fromIntegral $ (sourcePortNumber.header) message
-        message' = makeInitResponse address message socketSecret t i j
-        actions' = [socketSendMessage s destination message']
-        destination = sockAddr (address, portnum)
+     where
+       portnum = fromIntegral $
+                   (sourcePortNumber.header) message
+       message' = makeInitResponse address message
+                                   socketSecret t i j
+       actions' = [socketSendMessage s destination message']
+       destination = sockAddr (address, portnum)
 \end{lstlisting}
 
 Something that has disappeared when comparing to the monadic style is the dealing with concurrency. Since concurrency has been abstracted away by the events the MVars were no longer necessary and all datastructures are clean from mutable state.
