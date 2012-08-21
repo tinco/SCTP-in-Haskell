@@ -2,10 +2,10 @@
 In this chapter the process of exploring the different I/O styles is laid out. The first section explains the approach and an analysis of the I/O primitives required for implementing the protocol.
 
 \section{Approach}
-To explore different styles the foundations of the SCTP protocol\cite{_rfc_????} are implemented in Haskell using these styles. The implementations yield valuable insight into which I/O functions are used and how they interact with eachother.
+To explore different styles the foundations of the SCTP protocol\cite{_rfc_????} are implemented in Haskell using these styles, features like multi-homing and the heartbeat were omitted because they were not essential for the goal of the research. The implementations yield valuable insight into which I/O functions are used and how they interact with eachother.
 To make implementing the different I/O styles a simple and fast process a clear separation has been made between pure and I/O functions. All non-I/O functions have been extracted into utility functions and placed into different files so they can be reused by the different implementations. This clear separation also allows clear vision on what I/O actions are performed by each function, without distractions by complex pure functions.
 
-\begin{lstlisting}[caption={An example of a shared pure function}]
+\begin{lstlisting}[caption={An example of a shared pure function}, label={lst:shared}]
 deserializeMessage :: ByteString -> Message
 deserializeMessage bytes = Message header chunks
     where
@@ -34,9 +34,9 @@ These actions cover the four categories of the awkward squad \cite{jones_tacklin
 This confirms the idea that the network protocol implementation is a good subject to test the I/O styles in.
 \section{Monadic Style}
 \paragraph{Architecture}
-The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler is called with the relevant data.
+The monadic style implementation has an architecture inspired by events and event handlers. At the base there is a thread that does a blocking read on the message source. The message is then passed through several functions that decode the message in steps, when the message is valid and it is of interest to the application layer, an event handler\ref{lst-eventhandler} is called with the relevant data. The event handler was supplied by the interfacing program during the creation of the socket.
 
-\begin{lstlisting}[caption={The eventhandler is called when a payload is received}]
+\begin{lstlisting}[caption={The eventhandler is called when a payload is received},label={lst-eventhandler}]
 handlePayload :: Association -> Payload -> IO(Association)
 handlePayload association@Association{..} payload = do 
     acknowledge association payload
@@ -45,10 +45,13 @@ handlePayload association@Association{..} payload = do
     return association
 \end{lstlisting}
 
-\paragraph{Operation}
-The interfacing program first starts the stack, which is the interface to the SCTP protocol implementation that is normally run by the operating system. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket. Whenever a packet arrives it then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for and then calls the socketAcceptMessage function with that socket and the packet as parameters.
+In the listings the pure functions are easily distinguishable from the monadic functions, the pure functions are either prefixed by the keyword \lstinline{let} or are in a \lstinline{where} block. No monadic methods occur outside of do blocks.
+% Monadic methods are either by themselves on a line or assigned to a variable using the \lstinline{<-} operator.
 
-\begin{lstlisting}[caption={The stack loop}]
+\paragraph{Operation}
+The interfacing program first starts the stack, which is the interface to the SCTP protocol implementation that is normally run by the operating system. The stack opens an operating system socket and spawns a new thread that performs the blocking read operation on this socket\ref{lst-stackloop}. Whenever a packet arrives it then goes through a list of registered sockets to see if any socket is open to data on the port the packet is destined for and then calls the socketAcceptMessage function with that socket and the packet as parameters.
+
+\begin{lstlisting}[caption={The stack loop},label={lst-stackloop}]
 stackLoop :: SCTP -> IO ()
 stackLoop stack = forever $ do
     (bytes, peerAddress) <- NSB.recvFrom 
@@ -64,11 +67,13 @@ stackLoop stack = forever $ do
         Nothing -> return ()
 \end{lstlisting}
 
+In this listing\ref{lst-stackloop} \lstinline{NSB.recvFrom} is an alias for \lstinline{Network.Socket.ByteString.recvFrom}, the name is fully qualified to distinguish it from the default \lstinline{recvFrom} that is exposed by \lstinline{Network.Socket}.
+
 The interfacing application can register a socket at the stack by either calling the 'connect' or 'listen' function with an address and an event handler function as parameters.
 
-The 'socketAcceptMessage' function checks and decodes the message calls the handle function for the particular type of the message. The handler functions perform actions like creating associations, transferring data and tearing associations down. An association here represents a connection between two peers.
+The 'socketAcceptMessage' function checks and decodes the message and calls the handle function for that particular type of the message. The handler functions perform actions like creating associations, transferring data and tearing associations down. An association here represents a connection between two peers.
 
-When an action is performed that the interfacing application could be interested in, such as an incoming connection or received data, the event handler the application registered is called with an event object with relevant information.
+When an action is performed that the interfacing application could be interested in, such as an incoming connection or received data, the event handler the application registered is called with an event object containing relevant information.
 
 \begin{lstlisting}[caption={socketAcceptMessage decides what to do with a message}]
 socketAcceptMessage :: Socket -> IpAddress -> Message -> IO()
@@ -95,7 +100,7 @@ socketAcceptMessage socket address message = do
 \end{lstlisting}
 
 Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted.
-The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether enough time has passed. If it has then it calls whatever function has been assigned to it. 
+The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether enough time has passed. @@@@@ If it has then it calls whatever function has been assigned to it. 
 
 \begin{lstlisting}[caption={The init retransmission function}]
 initRetransmit :: Association -> Message -> Integer -> IO ()
