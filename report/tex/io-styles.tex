@@ -59,7 +59,7 @@ main :: Behaviour
 		appendChan stdout contents abort done)))))
 	where
 		fail ioerr =
-			appendChan stdout "can’t open file" abort done
+			appendChan stdout "can't open file" abort done
 abort	:: FailCont
 abort err resps = []
 letE	:: a->(a->b)->b
@@ -97,7 +97,7 @@ main =
 	appendChan stdout name >>
 	catch (readFile name >>= \contents ->
 		appendChan stdout contents)
-		(appendChan stdout "can’t open file")
+		(appendChan stdout "can't open file")
 \end{lstlisting}
 
 In this example the \lstinline!>>! chains together two actions, the \lstinline!>>=! operator does the same, but also makes the return value of the previous action available to the subsequent actions.
@@ -113,5 +113,5 @@ main = do
 	appendChan stdout name
 	catch (do contents <- readFile name
 		appendChan stdout contents)
-		(appendChan stdout "can’t open file")
+		(appendChan stdout "can't open file")
 \end{lstlisting}

@@ -5,6 +5,8 @@ In this chapter the process of exploring the different I/O styles is laid out. T
 To explore different styles the foundations of the SCTP protocol\cite{_rfc_????} are implemented in Haskell using these styles, features like multi-homing and the heartbeat were omitted because they were not essential for the goal of the research. The implementations yield valuable insight into which I/O functions are used and how they interact with eachother.
 To make implementing the different I/O styles a simple and fast process a clear separation has been made between pure and I/O functions. All non-I/O functions have been extracted into utility functions and placed into different files so they can be reused by the different implementations. This clear separation also allows clear vision on what I/O actions are performed by each function, without distractions by complex pure functions.
 
+Another benefit of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell has a quickcheck\cite{Claessen_2000} function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function easy to do. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
+
 \begin{lstlisting}[caption={An example of a shared pure function}, label={lst:shared}]
 deserializeMessage :: ByteString -> Message
 deserializeMessage bytes = Message header chunks
@@ -99,10 +101,10 @@ socketAcceptMessage socket address message = do
                     processOnSocket socket tag toProcess
 \end{lstlisting}
 
-Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted.
-The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether enough time has passed. @@@@@ If it has then it calls whatever function has been assigned to it. 
+Various actions in the protocol have associated timers. For example when a connection is initiated the connecting side starts a timer. A timer is constructed with a time goal. If an acknowledgement of the connection attempt is not received before the timer runs out the attempt is retransmitted.
+The timer runs in a separate thread which repeatedly sleeps a few milliseconds, wakes up and checks whether the goal time has passed. If it has then it calls the function that has been assigned to it, in this case the retransmission function\ref{lst-retransmission}.
 
-\begin{lstlisting}[caption={The init retransmission function}]
+\begin{lstlisting}[caption={The init retransmission function}, label={lst-retransmission}]
 initRetransmit :: Association -> Message -> Integer -> IO ()
 initRetransmit association message attempt = do
     if attempt < defaultMaxInitRetransmits
@@ -118,9 +120,18 @@ initRetransmit association message attempt = do
           closeConnection association
           (eventhandler socket) $ Error "Could not connect."
           return ()
+  where
+    peerAddr = associationPeerAddress association
+    socket = associationSocket association
+    timer = associationTimer association
+    timeOut = associationTimeOut association
 \end{lstlisting}
+Because timers run in a separate thread that runs concurrently with the packet receiving thread and both threads modify the state of associations the need for threadsafe communication of state arises. 
+A simple way of threadsafe communication in Haskell is by using the MVar.
+It represents a mutable variable that can be taken and put back with an IO operation.
+When the variable is taken, access to the variable is atomically blocked for other threads until the variable is put back. 
 
-Because timers run in a separate thread that runs concurrently with the packet receiving thread and both threads modify the state of associations the need for threadsafe communication of state arises. A simple way of threadsafe communication in Haskell is by using the MVar. It represents a mutable variable that can be taken and put back with an IO operation. When the variable is taken, access to the variable is atomically blocked for other threads until the variable is put back. 
+The timers themselves are also stored in an MVar so they can be accessed by the message receiving thread and cancelled when a message is received that does not need to be retransmitted.
 
 \paragraph{Analysis}
 Since implementation has a clear separation between pure and I/O functions it is easy to see what I/O actions are performed by each function. 
@@ -136,17 +147,16 @@ Since implementation has a clear separation between pure and I/O functions it is
 
 % The threads and MVars have to do with concurrency. The send and receive have to do with input and output. The timers have to do with error detection and recovery. The system calls are interfacing with external libraries and components. 
 
-Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code,  would not have been reaped.
+Separating the I/O from the pure logic was a goal from the start, but was done only when the stack was functioning correctly as a refactoring. It is seductive to include even the pure logic in the do blocks and effectively have all logic be inside of IO monads. If this separation would not have been a design goal, it might have not been done and the benefits, like more readable code, would not have been reaped.
 
-Another example of the benefits of splitting the I/O and the pure functions is that the pure functions are very easy to test. Haskell has a quickcheck\cite{Claessen_2000} function that runs random data through the functions to verify properties which can be expressed neatly. This made verifying the message parsing functions and the cookie creation function easy to do. It also aids debugging, when a bug is suspected an extra property is easily defined and verified.
 
 % JK: Inleiding begint met voordelen van Haskell, wat is daar van over?
 
-The implementation looks a lot like it would in any regular imperative language, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
+The implementation looks a lot like it would in any regular imperative language\ref{lst-imperative}, assignments and I/O calls are sequentially ordered and the operations on the IO values are very close to the source of those values. This makes it easy to see how data flows through.
 
 A possible disadvantage is that it might distract the programmer of one of the merits of the functional programming language, the philosophy of composing functions rather than sequencing actions, wasting Haskell's facilities for function composition. 
 
-\begin{lstlisting}[caption={The connect function looks imperative}]
+\begin{lstlisting}[caption={The connect function looks imperative}, label={lst-imperative}]
 connect :: SCTP -> NS.SockAddr -> (Event -> IO()) -> IO Socket
 connect stack peerAddr eventhandler = do
     keyValues <- replicateM 4 (randomIO :: IO Int)
